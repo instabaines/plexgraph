@@ -1,0 +1,4 @@
+packages:
+  - "packages/viz-core"
+  - "packages/app"
+  - "packages/widget/js"

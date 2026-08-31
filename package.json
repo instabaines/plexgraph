@@ -1,0 +1,16 @@
+{
+  "name": "hyperloom-workspace",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "verify-render": "node scripts/verify-render.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.0"
+  }
+}
