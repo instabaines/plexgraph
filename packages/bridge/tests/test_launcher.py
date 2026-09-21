@@ -226,7 +226,7 @@ def test_colab_is_recognised_as_a_notebook_and_not_as_plain_jupyter(colab):
     assert _in_jupyter() is True
 
 
-def test_show_in_colab_does_not_block_or_open_a_browser_and_uses_the_port_proxy(colab, monkeypatch):
+def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_from_one_proxied_port(colab, monkeypatch):
     opened, shown = [], []
     monkeypatch.setattr(launcher.webbrowser, "open", lambda url: opened.append(url))
     monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: shown.append(url))
@@ -234,15 +234,18 @@ def test_show_in_colab_does_not_block_or_open_a_browser_and_uses_the_port_proxy(
     try:
         assert opened == []
         assert len(shown) == 1 and shown[0] == handle.url
+        assert handle.http_port == handle.ws_port  # a second proxied port would be a different origin
         web, query = handle.url.split("/?", 1)
-        assert web == f"https://{handle.http_port}-abc123.colab.example"
-        ws = urllib.parse.parse_qs(query)["ws"][0]
-        assert ws == f"wss://{handle.ws_port}-abc123.colab.example"
-        assert len(colab) == 2  # the page's port and the socket's port
+        assert web == f"https://{handle.ws_port}-abc123.colab.example"
+        assert urllib.parse.parse_qs(query)["ws"][0] == f"wss://{handle.ws_port}-abc123.colab.example"
+        assert len(colab) == 1
+        # the page really is served by that port
+        page = urllib.request.urlopen(f"http://localhost:{handle.ws_port}/").read().decode()
+        assert "<title>plexgraph</title>" in page
     finally:
         handle.close()
 
 
 def test_colab_url_carries_the_style(colab):
-    url = launcher._colab_viewer_url(8000, 8001, {"nodeColor": [1, 0, 0, 1]})
-    assert url.startswith("https://8000-abc123.colab.example/?ws=wss%3A%2F%2F8001-abc123.colab.example&style=")
+    url = launcher._colab_viewer_url(8000, {"nodeColor": [1, 0, 0, 1]})
+    assert url.startswith("https://8000-abc123.colab.example/?ws=wss%3A%2F%2F8000-abc123.colab.example&style=")

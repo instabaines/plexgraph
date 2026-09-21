@@ -105,13 +105,13 @@ def _colab_proxy_url(port: int) -> str:
     return str(output.eval_js(f"google.colab.kernel.proxyPort({port}, {{'cache': true}})")).rstrip("/")
 
 
-def _colab_viewer_url(http_port: int, ws_port: int, style: dict[str, Any]) -> str:
-    """Colab kernels run on a remote machine, so `localhost` in the iframe would be the user's own computer.
-    Both servers are reached through Colab's port proxy instead, and the viewer is given the WebSocket address
-    in full (`?ws=wss://...`) rather than as a port number."""
-    web = _colab_proxy_url(http_port)
-    socket = _colab_proxy_url(ws_port)
-    socket = "wss://" + socket.split("://", 1)[-1]
+def _colab_viewer_url(port: int, style: dict[str, Any]) -> str:
+    """Colab kernels run on a remote machine, so `localhost` in the iframe would be the user's own computer. The
+    viewer is reached through Colab's port proxy instead. One port serves both the page and the WebSocket, so the
+    two share an origin (a second proxied port is a different origin and is refused). The viewer is given the
+    WebSocket address in full (`?ws=wss://...`) rather than as a port number."""
+    web = _colab_proxy_url(port)
+    socket = "wss://" + web.split("://", 1)[-1]
     url = f"{web}/?ws={urllib.parse.quote(socket, safe='')}"
     if style:
         url += f"&style={urllib.parse.quote(json.dumps(style))}"
@@ -426,6 +426,9 @@ def show(
     elif block is None:
         block = True
 
+    app_dir = _static_app_dir()
+    single_port = notebook == "colab" and app_dir.exists()  # see _colab_viewer_url
+
     ready = threading.Event()
     bound_ws_port: list[int] = []
     stop_bridge: list[Callable[[], Any]] = []
@@ -442,6 +445,7 @@ def show(
                 layout_iterations=layout_iterations,
                 seed=seed,
                 style=controller,
+                static_dir=app_dir if single_port else None,
             )
             port = await server.start()
             controller.bind(server.push_style)
@@ -464,7 +468,6 @@ def show(
         raise RuntimeError("bridge server failed to start")
     actual_ws_port = bound_ws_port[0]
 
-    app_dir = _static_app_dir()
     if not app_dir.exists():
         logger.warning(
             "no static frontend found at %s, %s or %s; the bridge is running but there is "
@@ -475,6 +478,9 @@ def show(
         )
         httpd = None
         actual_http_port = None
+    elif single_port:
+        httpd = None
+        actual_http_port = actual_ws_port
     else:
         httpd = _serve_static(app_dir, host, http_port)
         actual_http_port = httpd.server_address[1]
@@ -482,7 +488,7 @@ def show(
     url = None
     if actual_http_port is not None:
         if notebook == "colab":
-            url = _colab_viewer_url(actual_http_port, actual_ws_port, style)
+            url = _colab_viewer_url(actual_ws_port, style)
         else:
             url = _viewer_url(host, actual_http_port, actual_ws_port, style)
         if in_jupyter:

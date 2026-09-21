@@ -15,11 +15,16 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+import mimetypes
 import threading
+import urllib.parse
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import websockets
 from websockets.asyncio.server import Server, ServerConnection
+from websockets.datastructures import Headers
+from websockets.http11 import Request, Response
 
 from plexgraph_bridge.session import Session
 from plexgraph_core.model.ir import Graph
@@ -35,6 +40,27 @@ logger = logging.getLogger("plexgraph_bridge.server")
 _MAX_OUTBOX = 64
 # Changes made faster than the event loop can hand them out are collapsed into one snapshot past this many.
 _MAX_INCOMING = 200
+
+
+# Some systems map these to the wrong type (Windows reads them from the registry), and a browser refuses a script
+# served as text/plain.
+_CONTENT_TYPES = {".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".html": "text/html",
+                  ".json": "application/json", ".svg": "image/svg+xml", ".map": "application/json"}
+
+
+def _static_response(root: Path, request_path: str) -> Response:
+    """Answer a plain HTTP request for a file under `root` (the built viewer). Nothing outside `root` is served."""
+    relative = urllib.parse.unquote(request_path.split("?", 1)[0].split("#", 1)[0]).lstrip("/") or "index.html"
+    root = root.resolve()
+    target = (root / relative).resolve()
+    if target.is_dir():
+        target = target / "index.html"
+    if not target.is_relative_to(root) or not target.is_file():
+        body = b"not found"
+        return Response(404, "Not Found", Headers([("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]), body)
+    body = target.read_bytes()
+    kind = _CONTENT_TYPES.get(target.suffix.lower()) or mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    return Response(200, "OK", Headers([("Content-Type", kind), ("Content-Length", str(len(body)))]), body)
 
 
 class _Client:
@@ -95,8 +121,13 @@ class BridgeServer:
         layout_iterations: int = 200,
         seed: int | None = None,
         style: "StyleController | None" = None,
+        static_dir: Path | None = None,
     ) -> None:
+        """With `static_dir`, plain HTTP requests on this same port are answered with the viewer's files, so one
+        port serves both the page and the WebSocket. That is what a remote notebook needs: it can forward a single
+        port, and the page and the socket then share an origin."""
         self.graph = graph
+        self.static_dir = static_dir
         self.style = style
         self._clients: set[_Client] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -183,11 +214,18 @@ class BridgeServer:
     async def start(self) -> int:
         """Start listening and return the bound port."""
         self._loop = asyncio.get_running_loop()
-        self._server = await websockets.serve(self._handle_connection, self.host, self.port)
+        self._server = await websockets.serve(self._handle_connection, self.host, self.port,
+                                              process_request=self._process_request if self.static_dir else None)
         bound_port = self._server.sockets[0].getsockname()[1]
         self.port = bound_port
         logger.info("bridge server listening on ws://%s:%d", self.host, bound_port)
         return bound_port
+
+    def _process_request(self, connection: ServerConnection, request: Request) -> Response | None:
+        if request.headers.get("Upgrade", "").lower() == "websocket":
+            return None  # a viewer connecting: carry on with the WebSocket handshake
+        assert self.static_dir is not None
+        return _static_response(self.static_dir, request.path)
 
     async def wait_closed(self) -> None:
         if self._server is None:

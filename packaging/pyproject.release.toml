@@ -32,7 +32,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.26",
     "msgpack>=1.0",
-    "websockets>=12.0",
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]

@@ -461,139 +461,6 @@ wheels = [
 ]
 
 [[package]]
-name = "plexgraph"
-version = "0.1.0"
-source = { editable = "packages/plexgraph" }
-dependencies = [
-    { name = "plexgraph-bridge" },
-    { name = "plexgraph-core" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "plexgraph-bridge", editable = "packages/bridge" },
-    { name = "plexgraph-core", editable = "packages/core" },
-]
-
-[[package]]
-name = "plexgraph-bridge"
-version = "0.1.0"
-source = { editable = "packages/bridge" }
-dependencies = [
-    { name = "plexgraph-core" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "websockets" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "ipykernel" },
-    { name = "ipython" },
-    { name = "jupyter-client" },
-    { name = "nbclient" },
-    { name = "nbformat" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-jupyter = [
-    { name = "ipython" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "plexgraph-core", editable = "packages/core" },
-    { name = "ipykernel", marker = "extra == 'dev'" },
-    { name = "ipython", marker = "extra == 'dev'" },
-    { name = "ipython", marker = "extra == 'jupyter'" },
-    { name = "jupyter-client", marker = "extra == 'dev'" },
-    { name = "nbclient", marker = "extra == 'dev'" },
-    { name = "nbformat", marker = "extra == 'dev'" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
-    { name = "websockets", specifier = ">=12.0" },
-]
-provides-extras = ["dev", "jupyter"]
-
-[[package]]
-name = "plexgraph-core"
-version = "0.1.0"
-source = { editable = "packages/core" }
-dependencies = [
-    { name = "msgpack" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "networkx" },
-    { name = "pandas" },
-]
-dev = [
-    { name = "networkx" },
-    { name = "pandas" },
-    { name = "pytest" },
-]
-networkx = [
-    { name = "networkx" },
-]
-pandas = [
-    { name = "pandas" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "msgpack", specifier = ">=1.0" },
-    { name = "networkx", marker = "extra == 'all'", specifier = ">=3.0" },
-    { name = "networkx", marker = "extra == 'dev'", specifier = ">=3.0" },
-    { name = "networkx", marker = "extra == 'networkx'", specifier = ">=3.0" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pandas", marker = "extra == 'all'", specifier = ">=2.0" },
-    { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.0" },
-    { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-]
-provides-extras = ["pandas", "networkx", "all", "dev"]
-
-[[package]]
-name = "plexgraph-workspace"
-version = "0.0.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "plexgraph" },
-    { name = "plexgraph-bridge", extra = ["jupyter"] },
-    { name = "plexgraph-core", extra = ["all"] },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "plexgraph-bridge", extra = ["dev"] },
-    { name = "plexgraph-core", extra = ["dev"] },
-    { name = "matplotlib" },
-    { name = "python-igraph" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "plexgraph", editable = "packages/plexgraph" },
-    { name = "plexgraph-bridge", extras = ["jupyter"], editable = "packages/bridge" },
-    { name = "plexgraph-core", extras = ["all"], editable = "packages/core" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "plexgraph-bridge", extras = ["dev"], editable = "packages/bridge" },
-    { name = "plexgraph-core", extras = ["dev"], editable = "packages/core" },
-    { name = "matplotlib", specifier = ">=3.8" },
-    { name = "python-igraph", specifier = ">=0.11" },
-    { name = "scipy", specifier = ">=1.11" },
-]
-
-[[package]]
 name = "igraph"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1460,6 +1327,139 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f8/13/f870dd0b42690138e4e37a76b5138e5690ed4365a77071bb092d59037da0/platformdirs-4.11.11.tar.gz", hash = "sha256:b0befe8a90759e4a9a8b9820d434ae226a6549063210b596da0038a7a05aede4", size = 39949, upload-time = "2026-09-19T01:18:47.259Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/39/be/3ae887e84c38c4dd1c549cd5825adc93f48069a94fe1cb8ac52a9da16f15/platformdirs-4.11.11-py3-none-any.whl", hash = "sha256:972ea6b2b387155a536226a0750e46923d731d459a387c4a255c583ed2f64547", size = 24992, upload-time = "2026-09-19T01:18:45.825Z" },
+]
+
+[[package]]
+name = "plexgraph"
+version = "0.1.0"
+source = { editable = "packages/plexgraph" }
+dependencies = [
+    { name = "plexgraph-bridge" },
+    { name = "plexgraph-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "plexgraph-bridge", editable = "packages/bridge" },
+    { name = "plexgraph-core", editable = "packages/core" },
+]
+
+[[package]]
+name = "plexgraph-bridge"
+version = "0.1.0"
+source = { editable = "packages/bridge" }
+dependencies = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "plexgraph-core" },
+    { name = "websockets" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "ipykernel" },
+    { name = "ipython" },
+    { name = "jupyter-client" },
+    { name = "nbclient" },
+    { name = "nbformat" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+jupyter = [
+    { name = "ipython" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ipykernel", marker = "extra == 'dev'" },
+    { name = "ipython", marker = "extra == 'dev'" },
+    { name = "ipython", marker = "extra == 'jupyter'" },
+    { name = "jupyter-client", marker = "extra == 'dev'" },
+    { name = "nbclient", marker = "extra == 'dev'" },
+    { name = "nbformat", marker = "extra == 'dev'" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "plexgraph-core", editable = "packages/core" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "websockets", specifier = ">=13.0" },
+]
+provides-extras = ["dev", "jupyter"]
+
+[[package]]
+name = "plexgraph-core"
+version = "0.1.0"
+source = { editable = "packages/core" }
+dependencies = [
+    { name = "msgpack" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "networkx" },
+    { name = "pandas" },
+]
+dev = [
+    { name = "networkx" },
+    { name = "pandas" },
+    { name = "pytest" },
+]
+networkx = [
+    { name = "networkx" },
+]
+pandas = [
+    { name = "pandas" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "msgpack", specifier = ">=1.0" },
+    { name = "networkx", marker = "extra == 'all'", specifier = ">=3.0" },
+    { name = "networkx", marker = "extra == 'dev'", specifier = ">=3.0" },
+    { name = "networkx", marker = "extra == 'networkx'", specifier = ">=3.0" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "pandas", marker = "extra == 'all'", specifier = ">=2.0" },
+    { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.0" },
+    { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+]
+provides-extras = ["pandas", "networkx", "all", "dev"]
+
+[[package]]
+name = "plexgraph-workspace"
+version = "0.0.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "plexgraph" },
+    { name = "plexgraph-bridge", extra = ["jupyter"] },
+    { name = "plexgraph-core", extra = ["all"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "matplotlib" },
+    { name = "plexgraph-bridge", extra = ["dev"] },
+    { name = "plexgraph-core", extra = ["dev"] },
+    { name = "python-igraph" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "plexgraph", editable = "packages/plexgraph" },
+    { name = "plexgraph-bridge", extras = ["jupyter"], editable = "packages/bridge" },
+    { name = "plexgraph-core", extras = ["all"], editable = "packages/core" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "plexgraph-bridge", extras = ["dev"], editable = "packages/bridge" },
+    { name = "plexgraph-core", extras = ["dev"], editable = "packages/core" },
+    { name = "python-igraph", specifier = ">=0.11" },
+    { name = "scipy", specifier = ">=1.11" },
 ]
 
 [[package]]

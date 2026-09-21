@@ -342,7 +342,8 @@ installed otherwise.
   kernels) without port-forwarding. A real anywidget integration is a reasonable future upgrade (see
   [`docs/architecture/plan.md`](architecture/plan.md)) but isn't built yet.
 - **Google Colab** is detected separately. Its kernel runs on a remote machine, so `show()` asks Colab's port
-  proxy for the addresses of the page and of the WebSocket and hands the viewer the `wss://` address in full.
+  proxy for the address of a single port that serves both the page and the WebSocket, and hands the viewer the
+  `wss://` address in full.
   If the viewer stays blank there, `handle.url` (with `return_handle=True`) is the address it was given.
 - Use `width`/`height` to control the iframe's size (defaults 900x600).
 
