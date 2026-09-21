@@ -1331,7 +1331,7 @@ wheels = [
 
 [[package]]
 name = "plexgraph"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/plexgraph" }
 dependencies = [
     { name = "plexgraph-bridge" },
@@ -1346,7 +1346,7 @@ requires-dist = [
 
 [[package]]
 name = "plexgraph-bridge"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/bridge" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -1387,7 +1387,7 @@ provides-extras = ["dev", "jupyter"]
 
 [[package]]
 name = "plexgraph-core"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "msgpack" },

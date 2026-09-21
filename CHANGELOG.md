@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+## [0.1.1]
+
 ### Fixed
 - `show()` in Google Colab blocked forever and displayed nothing: Colab was not recognised as a notebook (its shell
   is not a `ZMQInteractiveShell`), so the call waited on a browser that a remote machine cannot open. Colab is now
@@ -48,5 +50,6 @@ First release, as a single installable package: `pip install plexgraph`.
 - Hovering picked the first node drawn where nodes overlap instead of the one on top.
 - Zooming into a large graph while its layout was still streaming stayed stuck in the overview.
 
-[Unreleased]: https://github.com/instabaines/plexgraph/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/instabaines/plexgraph/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/instabaines/plexgraph/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/instabaines/plexgraph/releases/tag/v0.1.0

@@ -2,7 +2,7 @@
 # It is never published. The distribution users install is assembled by scripts/build_release.py (see docs/releasing.md).
 [project]
 name = "plexgraph"
-version = "0.1.0"
+version = "0.1.1"
 description = "Development facade for the plexgraph monorepo"
 requires-python = ">=3.11"
 dependencies = [
