@@ -86,6 +86,16 @@ try:
 finally:
     handle.close()
 
+# the notebook widget: the installed package holds the viewer inside the script the browser is sent
+from plexgraph_bridge.widget import GraphWidget, _host_script
+script = _host_script()
+assert "<canvas" in script and "__APP_HTML__" not in script and len(script) > 100_000, len(script)
+view = GraphWidget(g, layout_iterations=2)
+try:
+    assert view.viewer_query == "?ws=parent"
+finally:
+    view.close()
+
 # optional dependencies fail clearly, and named errors are useful
 try:
     pg.from_networkx(object())
@@ -121,7 +131,8 @@ def inspect_wheel(path: Path) -> list[str]:
     if not path.name.endswith("-py3-none-any.whl"):
         problems.append(f"{path.name} is not a pure-Python universal wheel")
     for required in ("plexgraph/__init__.py", "plexgraph/py.typed", "plexgraph_core/py.typed", "plexgraph_bridge/py.typed",
-                     "plexgraph_bridge/static/index.html", "plexgraph_core/model/ir.py", "plexgraph_bridge/style.py"):
+                     "plexgraph_bridge/static/index.html", "plexgraph_core/model/ir.py", "plexgraph_bridge/style.py",
+                     "plexgraph_bridge/widget.py", "plexgraph_bridge/widget.js", "plexgraph_bridge/hub.py"):
         if required not in names:
             problems.append(f"wheel is missing {required}")
     if not any(n.startswith("plexgraph_bridge/static/assets/") and n.endswith(".js") for n in names):

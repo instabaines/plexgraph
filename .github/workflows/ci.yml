@@ -109,6 +109,10 @@ jobs:
             node scripts/$script.mjs
             echo "::endgroup::"
           done
+      - name: Notebook widget in a real JupyterLab
+        env:
+          PYTHON_PATH: python
+        run: node scripts/verify-widget.mjs
 
   package:
     name: Build and check the release artifacts

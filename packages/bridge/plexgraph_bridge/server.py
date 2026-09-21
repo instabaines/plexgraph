@@ -13,11 +13,9 @@ tab that connects later is brought up to date right after it receives the graph.
 from __future__ import annotations
 
 import asyncio
-import collections
 import logging
 import mimetypes
 import secrets
-import threading
 import urllib.parse
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,20 +25,13 @@ from websockets.asyncio.server import Server, ServerConnection
 from websockets.datastructures import Headers
 from websockets.http11 import Request, Response
 
-from plexgraph_bridge.session import Session
+from plexgraph_bridge.hub import ClientHub
 from plexgraph_core.model.ir import Graph
 
 if TYPE_CHECKING:
     from plexgraph_bridge.style import StyleController
 
 logger = logging.getLogger("plexgraph_bridge.server")
-
-
-# A tab that stops reading (backgrounded, or its page is busy) must never stall Python, and must not make the
-# server queue an unbounded backlog. Past this many queued messages the backlog is replaced by one fresh snapshot.
-_MAX_OUTBOX = 64
-# Changes made faster than the event loop can hand them out are collapsed into one snapshot past this many.
-_MAX_INCOMING = 200
 
 
 # Some systems map these to the wrong type (Windows reads them from the registry), and a browser refuses a script
@@ -64,55 +55,7 @@ def _static_response(root: Path, request_path: str) -> Response:
     return Response(200, "OK", Headers([("Content-Type", kind), ("Content-Length", str(len(body)))]), body)
 
 
-class _Client:
-    """One connected tab.
-
-    Sends are serialised by a lock. Style messages go through an outbox drained by a writer task, so pushing a
-    change never waits on a slow tab and always arrives in order. A change that arrives while the tab is still being
-    brought up to date is held until it is ready."""
-
-    def __init__(self, websocket: ServerConnection) -> None:
-        self.websocket = websocket
-        self.lock = asyncio.Lock()
-        self.ready = False
-        self.pending: list[tuple[int, list[bytes]]] = []
-        self.outbox: collections.deque[bytes] = collections.deque()
-        self.wake = asyncio.Event()
-        self.writer: asyncio.Task | None = None
-
-    async def send(self, data: bytes) -> None:
-        async with self.lock:
-            await self.websocket.send(data)
-
-    def offer(self, version: int, messages: list[bytes], resync, snapshot: bool = False) -> None:
-        """Called on the event loop for every style change. A snapshot (the whole current style) replaces anything
-        still queued, since it supersedes it."""
-        if not self.ready:
-            self.pending.append((version, messages))
-            return
-        if snapshot:
-            self.outbox.clear()
-        self.outbox.extend(messages)
-        if len(self.outbox) > _MAX_OUTBOX and resync is not None:
-            self.outbox.clear()
-            self.outbox.extend(resync()[1])
-        self.wake.set()
-
-    def start_writer(self) -> None:
-        self.writer = asyncio.get_running_loop().create_task(self._drain())
-
-    async def _drain(self) -> None:
-        while True:
-            await self.wake.wait()
-            self.wake.clear()
-            while self.outbox:
-                try:
-                    await self.send(self.outbox.popleft())
-                except websockets.ConnectionClosed:
-                    return
-
-
-class BridgeServer:
+class BridgeServer(ClientHub):
     def __init__(
         self,
         graph: Graph,
@@ -133,93 +76,21 @@ class BridgeServer:
         With `static_dir`, plain HTTP requests on this same port are answered with the viewer's files, so one
         port serves both the page and the WebSocket. That is what a remote notebook needs: it can forward a single
         port, and the page and the socket then share an origin."""
-        self.graph = graph
+        super().__init__(graph, layout_iterations=layout_iterations, seed=seed, style=style)
         self.static_dir = static_dir
         self.token = token
-        self.style = style
-        self._clients: set[_Client] = set()
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._incoming: collections.deque[tuple[int, list[bytes]]] = collections.deque()
-        self._incoming_lock = threading.Lock()
-        self._drain_scheduled = False
-        self._resync_needed = False
         self.host = host
         self.port = port
-        self.layout_iterations = layout_iterations
-        self.seed = seed
         self._server: Server | None = None
 
     async def _handle_connection(self, websocket: ServerConnection) -> None:
-        session = Session(
-            self.graph, layout_iterations=self.layout_iterations, seed=self.seed
-        )
-        client = _Client(websocket)
-        # Registered before anything is sent so that no style update can slip past this tab while it connects.
-        self._clients.add(client)
-
-        async def bring_style_up_to_date() -> None:
-            if self.style is not None:
-                version, messages = self.style.replay()
-                for message in messages:
-                    await client.send(message)
-                # Updates that arrived meanwhile and are newer than the replay; the check-and-set below has no
-                # await in it, so nothing can be added between "empty" and "ready".
-                while client.pending:
-                    newer, batch = client.pending.pop(0)
-                    if newer > version:
-                        for message in batch:
-                            await client.send(message)
-            client.ready = True
-            client.start_writer()
-
-        try:
-            await session.stream_to(client.send, after_graph=bring_style_up_to_date)
-
-            # Placeholder message loop for future control-plane traffic
-            # (hover/selection events flowing frontend -> Python).
+        async def until_gone() -> None:
+            # Placeholder message loop for future control-plane traffic (hover/selection events flowing
+            # frontend -> Python).
             async for _message in websocket:
                 pass
-        except websockets.ConnectionClosed:
-            pass  # the tab was closed or reloaded, possibly mid-layout: normal, and not worth a traceback
-        finally:
-            self._clients.discard(client)
-            if client.writer is not None:
-                client.writer.cancel()
 
-    def _drain_incoming(self) -> None:
-        """On the event loop: hand every queued change to every tab."""
-        with self._incoming_lock:
-            batches = list(self._incoming)
-            self._incoming.clear()
-            resync, self._resync_needed = self._resync_needed, False
-            self._drain_scheduled = False
-        resync_fn = self.style.replay if self.style is not None else None
-        clients = list(self._clients)
-        if resync and resync_fn is not None:
-            version, messages = resync_fn()
-            for client in clients:
-                client.offer(version, messages, resync_fn, snapshot=True)
-            return
-        for version, messages in batches:
-            for client in clients:
-                client.offer(version, messages, resync_fn)
-
-    def push_style(self, version: int, messages: list[bytes]) -> None:
-        """Queue style messages for every connected tab. Safe to call from any thread; never waits on a tab, and
-        messages reach each tab in the order they were pushed. However fast changes are made, at most one wake-up of
-        the event loop is ever pending."""
-        loop = self._loop
-        if loop is None or loop.is_closed():
-            return
-        with self._incoming_lock:
-            self._incoming.append((version, messages))
-            if len(self._incoming) > _MAX_INCOMING:
-                self._incoming.clear()
-                self._resync_needed = True
-            if self._drain_scheduled:
-                return
-            self._drain_scheduled = True
-        loop.call_soon_threadsafe(self._drain_incoming)
+        await self.serve_client(websocket.send, until_gone, closed=(websockets.ConnectionClosed,))
 
     async def start(self) -> int:
         """Start listening and return the bound port."""

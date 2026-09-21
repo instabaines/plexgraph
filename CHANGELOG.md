@@ -7,6 +7,17 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [0.1.1]
 
+### Added
+- **A notebook widget.** In a notebook, `show()` now displays the viewer as a widget (built on anywidget), and the graph,
+  the layout and every style change travel over the notebook's own connection. No server is started and no port is
+  opened, so it does not depend on your browser being able to reach the machine that runs Python, which is what broke
+  in Colab and would break on any hosted notebook. `show(widget=False)` keeps the older local-server route, and it is
+  what `show()` falls back to when `anywidget` is not installed. `show(g, return_handle=True).widget` is the
+  `GraphWidget`, for placing in a layout of your own.
+- `anywidget` is now a dependency of `plexgraph`.
+- `scripts/verify-widget.mjs` runs the widget in a real JupyterLab in a real browser (in CI): it renders, a style change
+  arrives live, nothing listens on a port, and the viewer comes back after a page reload.
+
 ### Security
 - The viewer's WebSocket accepted a connection from any web page open in the same browser: a browser lets a page connect
   to `localhost:<port>` whatever its origin, so any site you visited while a viewer was open could read the graph
@@ -15,6 +26,9 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   address, with the token, for your own WebSocket clients.
 
 ### Fixed
+- The viewer could draw nothing at all, in a 1x1 pixel area, when its canvas was created before its container had a
+  size (which happens inside a notebook) and then resized. The renderer now tells its graphics library when the canvas
+  changes size, and the app follows the canvas with a `ResizeObserver`.
 - `show()` in Google Colab blocked forever and displayed nothing: Colab was not recognised as a notebook (its shell
   is not a `ZMQInteractiveShell`), so the call waited on a browser that a remote machine cannot open. Colab is now
   detected, `show()` returns immediately, and the viewer is shown through Colab's `serve_kernel_port_as_iframe`. One port
@@ -25,8 +39,9 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   traceback, which appears as red output in a notebook.
 - `show()` in a script on a machine with no browser (SSH, a container, a server) waited forever and printed nothing.
   It now prints the address and the `ssh -L` command that forwards the ports.
-- `show()` in a hosted notebook where the viewer cannot be reached (Kaggle, JupyterHub or Binder, Databricks) now
-  warns instead of leaving a blank frame. The user guide has a new "Where it runs" table.
+- On the older server route (`widget=False`, or when `anywidget` is missing), `show()` in a hosted notebook where the
+  viewer cannot be reached (Kaggle, JupyterHub or Binder, Databricks) now warns instead of leaving a blank frame. The
+  user guide has a new "Where it runs" table.
 - `read_temporal_edgelist`: a byte-order mark at the start of a file (as Excel writes) became part of the first node's
   name, and in a file with an explicit delimiter a trailing empty field was dropped, so a valid row was rejected as
   having too few columns.

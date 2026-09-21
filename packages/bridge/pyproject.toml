@@ -9,6 +9,7 @@ dependencies = [
     "plexgraph-core",
     "numpy>=1.26",
     "websockets>=13.0",
+    "anywidget>=0.9",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,7 @@ dev = [
     "nbclient",
     "nbformat",
     "jupyter_client",
+    "jupyterlab",  # the end-to-end test of the notebook widget runs a real JupyterLab
 ]
 jupyter = [
     "ipython",

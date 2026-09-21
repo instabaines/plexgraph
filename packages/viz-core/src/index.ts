@@ -1,7 +1,9 @@
 import type { SliceLayout } from "./layout/slices";
 export { sliceGeometry, type SliceLayout } from "./layout/slices";
 import { Renderer, RendererOptions, StackAxis, TimeFilterOptions, TimeSplit } from "./render/renderer";
-import { WebSocketTransport } from "./transport/websocket";
+import { WebSocketTransport, type TransportHandlers } from "./transport/websocket";
+import { ParentTransport, PARENT_TRANSPORT } from "./transport/parent";
+export { PARENT_TRANSPORT } from "./transport/parent";
 import type { WireNode } from "./ir/types";
 import { isGraphMessage, isLayoutStepMessage, isStyleMessage } from "./ir/types";
 import { applyStyleMessage } from "./style/messages";
@@ -107,8 +109,7 @@ export interface MountViewerOptions extends RendererOptions {
 
 /**
  * Mount a live graph viewer on `canvas`, fed by the bridge WebSocket at
- * `wsUrl`. This is the entry point both the standalone app shell and the
- * (future) anywidget transport shim build on.
+ * `wsUrl`, or, when `wsUrl` is `PARENT_TRANSPORT`, by the notebook widget that hosts this page in an iframe.
  */
 export function mountViewer(
   canvas: HTMLCanvasElement,
@@ -117,7 +118,7 @@ export function mountViewer(
 ): ViewerHandle {
   const renderer = new Renderer(canvas, options);
 
-  const transport = new WebSocketTransport(wsUrl, {
+  const handlers: TransportHandlers = {
     onMessage: (msg) => {
       if (isGraphMessage(msg)) {
         renderer.loadGraph(msg);
@@ -136,7 +137,8 @@ export function mountViewer(
     onOpen: options?.onOpen,
     onClose: options?.onClose,
     onError: options?.onError ?? ((err) => console.error("[plexgraph] transport error", err)),
-  });
+  };
+  const transport = wsUrl === PARENT_TRANSPORT ? new ParentTransport(handlers) : new WebSocketTransport(wsUrl, handlers);
 
   return {
     searchNodes: query => renderer.searchNodes(query),

@@ -1,4 +1,4 @@
-import { formatTime, mountViewer, RendererOptions, rgbaToCss, sampleColormap, SECONDS_PER_DAY, type ColorLegend, type TimeDomain, type TimeMode, type TimeSplit } from "@plexgraph/viz-core";
+import { formatTime, mountViewer, PARENT_TRANSPORT, RendererOptions, rgbaToCss, sampleColormap, SECONDS_PER_DAY, type ColorLegend, type TimeDomain, type TimeMode, type TimeSplit } from "@plexgraph/viz-core";
 import { exportView, type ExportFormat } from "./export";
 import { mountAppearance } from "./appearance";
 import { mountTools } from "./tools";
@@ -92,9 +92,15 @@ function resizeCanvas(): void {
   canvas.height = canvas.clientHeight * dpr;
 }
 window.addEventListener("resize", resizeCanvas);
+// The window is not the only thing that resizes the canvas: inside a notebook its container can be laid out after this
+// script runs, and it changes size whenever the widget's height does.
+new ResizeObserver(resizeCanvas).observe(canvas);
 resizeCanvas();
 
-const params = new URLSearchParams(window.location.search);
+// In a notebook the viewer is an iframe with no address of its own, so the widget hands over the same settings a URL
+// would carry.
+const injected = (window as unknown as { __PLEXGRAPH_PARAMS__?: string }).__PLEXGRAPH_PARAMS__;
+const params = new URLSearchParams(injected ?? window.location.search);
 const wsPort = params.get("ws");
 const wsHost = params.get("host") ?? window.location.hostname;
 const style = parseStyleParam(params.get("style"));
@@ -109,12 +115,14 @@ if (!wsPort) {
 } else {
   // ?ws= is normally a port on this host. `same-origin` means the server that served this page (a remote notebook
   // forwards one port for both); a full ws:// or wss:// address is used as given.
-  const wsUrl = wsPort === "same-origin"
-    ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/`
-    : /^wss?:\/\//.test(wsPort) ? wsPort : `ws://${wsHost}:${wsPort}`;
+  const wsUrl = wsPort === PARENT_TRANSPORT
+    ? PARENT_TRANSPORT // a notebook widget feeds this page directly; no socket
+    : wsPort === "same-origin"
+      ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/`
+      : /^wss?:\/\//.test(wsPort) ? wsPort : `ws://${wsHost}:${wsPort}`;
   // The server only talks to a viewer that knows the secret it was started with. It is kept out of what is shown.
   const token = params.get("token");
-  const wsAddress = token ? `${wsUrl}${wsUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : wsUrl;
+  const wsAddress = token && wsUrl !== PARENT_TRANSPORT ? `${wsUrl}${wsUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : wsUrl;
   // Idle/connected state shows nothing (no "connected (ws://host:port)"
   // clutter — it's debug info, not something a viewer or an exported
   // image should carry) — only genuinely useful states (an error, or the

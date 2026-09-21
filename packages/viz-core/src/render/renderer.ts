@@ -636,6 +636,7 @@ export class Renderer {
   private pickFboSize = { width: 0, height: 0 };
 
   private rafHandle: number | null = null;
+  private lastCanvasSize = "";
 
   // Hover/picking state: the pointer position is tracked passively and
   // picked once per frame (a 1x1 offscreen readback is cheap) rather than
@@ -2416,6 +2417,11 @@ export class Renderer {
   }
 
   private loop = (): void => {
+    // regl reads the drawing-buffer size when it is polled, and this loop draws without regl.frame, so nothing polls it.
+    // A canvas that was resized after regl started (a viewer created inside a container that had no size yet, as in a
+    // notebook widget) would otherwise keep drawing into its first, 1x1, viewport.
+    const size = `${this.canvas.width}x${this.canvas.height}`;
+    if (size !== this.lastCanvasSize) { this.lastCanvasSize = size; this.regl.poll(); }
     const camera = `${this.camera.x},${this.camera.y},${this.camera.zoom},${this.canvas.width},${this.canvas.height}`;
     if (camera !== this.lastCamera) { this.lastCamera = camera; this.dirty = this.pointerDirty = true; this.markLodStale(); }
     if (this.lodPending && performance.now() - this.lodChangedAt > 160) this.applyLod();

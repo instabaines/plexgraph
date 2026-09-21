@@ -97,7 +97,7 @@ a = g.add_node("alice")
 b = g.add_node("bob")
 g.add_edge(a, b, weight=1.0)
 
-show(g)  # opens a browser tab (or renders inline if you're in Jupyter)
+show(g)  # opens a browser tab (or shows a widget if you're in a notebook)
 ```
 
 For everything else — directed/layered/temporal/hypergraph graphs, styling (colors, sizes, edge
@@ -116,8 +116,8 @@ pnpm --filter @plexgraph/viz-core test
 
 - `packages/core` — Python graph model (IR), algorithms, import/export
 - `packages/bridge` — local WebSocket server bridging Python and the browser frontend
-- `packages/widget` — reserved for a future "real" Jupyter (anywidget) integration; not built yet.
-  The current Jupyter support (inline iframe display) lives in `packages/bridge` — see Quick start.
+- The notebook widget (anywidget) lives in `packages/bridge` (`widget.py`, `widget.js`); it hosts the same viewer
+  app in the notebook and feeds it over the notebook's own connection, so it needs no port.
 - `packages/viz-core` — TypeScript rendering engine (WebGL/regl-based)
 - `packages/app` — standalone browser app shell
 - `docs/user-guide.md` — how to build, style, view, export, and import graphs

@@ -233,7 +233,7 @@ def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_fr
             super().__init__(*args, **kwargs)
 
     monkeypatch.setattr(launcher, "BridgeServer", Recording)
-    handle = show(_small_graph(), layout_iterations=2, height=480, return_handle=True)  # would hang forever if it blocked
+    handle = show(_small_graph(), widget=False, layout_iterations=2, height=480, return_handle=True)  # would hang forever if it blocked
     try:
         assert opened == [] and inline == []
         assert bound == ["0.0.0.0"]  # Colab's proxy cannot reach a server bound to localhost
@@ -285,7 +285,7 @@ def test_a_successful_browser_open_prints_nothing(monkeypatch, capsys):
 
 
 def test_colab_has_no_url_to_hand_out(colab):
-    handle = show(_small_graph(), layout_iterations=2, return_handle=True)
+    handle = show(_small_graph(), widget=False, layout_iterations=2, return_handle=True)
     try:
         assert handle.url is None
     finally:
@@ -303,7 +303,7 @@ def test_a_hosted_notebook_gets_a_warning_instead_of_a_silent_blank_frame(monkey
     monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: None)
     monkeypatch.setenv(variable, "1")
     with pytest.warns(RuntimeWarning, match=name):
-        handle = show(_small_graph(), layout_iterations=2, return_handle=True)
+        handle = show(_small_graph(), widget=False, layout_iterations=2, return_handle=True)
     handle.close()
 
 
@@ -317,7 +317,7 @@ def test_no_warning_in_an_ordinary_local_notebook(monkeypatch, recwarn):
     monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: None)
     for variable in launcher._HOSTED_NOTEBOOKS:
         monkeypatch.delenv(variable, raising=False)
-    handle = show(_small_graph(), layout_iterations=2, return_handle=True)
+    handle = show(_small_graph(), widget=False, layout_iterations=2, return_handle=True)
     handle.close()
     assert not [w for w in recwarn if issubclass(w.category, RuntimeWarning)]
 
@@ -351,7 +351,7 @@ def test_every_session_gets_its_own_secret():
 
 
 def test_the_colab_path_carries_the_secret(colab):
-    handle = show(_small_graph(), layout_iterations=2, return_handle=True)
+    handle = show(_small_graph(), widget=False, layout_iterations=2, return_handle=True)
     try:
         port, path, _, _ = colab[0]
         assert path == f"/?ws=same-origin&token={urllib.parse.quote(handle.token)}"

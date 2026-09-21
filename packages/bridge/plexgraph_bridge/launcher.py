@@ -130,6 +130,34 @@ def _colab_viewer_path(style: dict[str, Any], token: str | None = None) -> str:
     return path
 
 
+def _widget_available() -> bool:
+    try:
+        import anywidget  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _show_widget(graph: Graph, controller: StyleController, viewer_style: dict[str, Any], *, notebook: str,
+                 layout_iterations: int, seed: int | None, height: int, return_handle: bool) -> ShowHandle | None:
+    from IPython.display import display
+
+    from plexgraph_bridge.widget import GraphWidget
+
+    if notebook == "colab":
+        try:  # Colab only runs third-party widgets once this is switched on
+            from google.colab import output  # type: ignore[import-not-found]
+
+            output.enable_custom_widget_manager()
+        except Exception:
+            logger.warning("could not enable Colab's custom widget manager; the widget may not appear", exc_info=True)
+    view = GraphWidget(graph, controller=controller, layout_iterations=layout_iterations, seed=seed, height=height,
+                       viewer_style=viewer_style)
+    display(view)
+    handle = ShowHandle(ws_port=None, http_port=None, thread=None, _stop=view.close, widget=view, _style=controller)
+    return handle if return_handle else None
+
+
 def _display_colab(port: int, path: str, *, height: int) -> None:
     """Show the viewer in the cell output through Colab's own port-forwarding call. Other ways of building the
     address (`google.colab.kernel.proxyPort`) point at a different proxy that does not carry WebSockets."""
@@ -251,17 +279,21 @@ class ShowHandle:
     (block=False) where the caller wants the bound ports without the call
     blocking the current thread."""
 
-    ws_port: int
+    ws_port: int | None  # None for the notebook widget, which uses no port
     http_port: int | None
-    thread: threading.Thread
+    thread: threading.Thread | None
     _stop: Callable[[], None] = field(repr=False)
     token: str | None = field(default=None, repr=False)  # the secret a viewer must present to connect
+    widget: Any = field(default=None, repr=False)  # the GraphWidget, when the viewer is a notebook widget
     url: str | None = None  # where the viewer is; None when there is no address to give (no viewer served, or Colab)
     _style: StyleController | None = field(default=None, repr=False)
 
     @property
     def ws_url(self) -> str:
-        """The address a WebSocket client connects to (the viewer does this itself; it is for your own clients)."""
+        """The address a WebSocket client connects to (the viewer does this itself; it is for your own clients).
+        A notebook widget has no socket, so there is none to give."""
+        if self.ws_port is None:
+            raise RuntimeError("this viewer is a notebook widget; it has no WebSocket address")
         return f"ws://localhost:{self.ws_port}/" + (f"?token={urllib.parse.quote(self.token)}" if self.token else "")
 
     def close(self) -> None:
@@ -331,6 +363,7 @@ def show(
     arrow_t: float | None = None,
     hull_padding: float | None = None,
     return_handle: bool = False,
+    widget: bool | None = None,
     **style_options: Any,
 ) -> ShowHandle | None:
     """Render `graph` interactively.
@@ -339,24 +372,19 @@ def show(
     static frontend app over plain HTTP. Where it's displayed depends on
     the environment:
 
-    - **Inside Jupyter** (notebook, JupyterLab, VS Code notebooks): embeds
-      the viewer inline in the cell output via an `<iframe>`, and never
-      blocks the kernel (block defaults to False here regardless of the
-      `block` argument).
+    - **Inside a notebook** (Jupyter, JupyterLab, VS Code, Colab and other
+      frontends that run widgets): shows the viewer as a widget in the cell
+      output. Everything travels over the notebook's own connection, so no
+      server or port is involved and it works on hosted notebooks too. It
+      never blocks the kernel. This needs the `anywidget` package (installed
+      with plexgraph); pass `widget=False` to use the older way instead: a
+      small local web server embedded in an `<iframe>`, which only works
+      where your browser can reach the machine running Python.
     - **Everywhere else**: opens a system browser tab (unless
       open_browser=False), and blocks the calling thread by default so the
       process stays alive to keep serving — pass block=False to run the
       server without blocking (e.g. from your own event loop or another
       thread).
-
-    Note on the Jupyter path: this is a pragmatic reuse of the same local
-    WebSocket+HTTP server embedded in an iframe, not a "real" anywidget
-    integration (bidirectional comm channel, works over remote/hosted
-    Jupyter like Colab/JupyterHub without port-forwarding, survives
-    notebook reopening without rerunning the cell). That's the more robust
-    design docs/architecture/plan.md describes for the `widget` package and
-    is a reasonable future upgrade; this iframe approach ships today with
-    no new transport code.
 
     Sizing:
     - `width`/`height` control the rendered viewer's pixel size (the
@@ -447,6 +475,14 @@ def show(
     )
 
     notebook = _notebook_kind()
+    if notebook is not None:
+        if widget and not _widget_available():
+            raise ImportError("show(widget=True) needs the anywidget package: pip install anywidget")
+        if widget is None:
+            widget = _widget_available()
+        if widget:
+            return _show_widget(graph, controller, style, notebook=notebook, layout_iterations=layout_iterations,
+                                seed=seed, height=height, return_handle=return_handle)
     in_jupyter = notebook is not None
     if in_jupyter:
         block = False

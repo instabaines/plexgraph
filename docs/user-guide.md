@@ -335,36 +335,42 @@ installed otherwise.
 
 ## Where it runs
 
-`show()` starts a small server next to your Python process and points a browser at it. That works when the browser
-can reach the machine your code runs on, and it stops working when it cannot. This is what has and has not been checked:
+In a notebook `show()` displays the viewer as a **widget** (built on [anywidget](https://anywidget.dev/)): the graph and
+its layout travel over the notebook's own connection, so no server or port is involved, nothing has to be reachable
+from your browser, and there is nothing for another web page to connect to. Outside a notebook it opens a browser tab
+served from a small local server. This is what has and has not been checked:
 
 | Where you run it | Status |
 |---|---|
-| A script or a local notebook on your own computer (Linux desktop) | Verified: opens a browser tab, or shows inline |
-| Google Colab | Verified by hand: shown inline |
-| A local Jupyter, JupyterLab or VS Code notebook on Windows or macOS | Expected to work (the same code path as above); the automated tests cover the Python side on Windows and macOS, but nobody has looked at the viewer there |
+| A script on your own computer (Linux desktop) | Verified: opens a browser tab |
+| JupyterLab | Verified end to end in CI with a real JupyterLab and a real browser: the viewer renders in the widget, a style change from another cell arrives live, and it comes back after the page is reloaded. Checked on a 100,000-node graph too |
+| Google Colab | The widget is expected to work (`show()` switches on Colab's custom widget manager, which Colab needs for widgets like this one) but has not been run there. The older iframe route, `widget=False`, was verified by hand |
+| Jupyter Notebook 7, VS Code notebooks, JupyterHub, Binder, Kaggle, Databricks, SageMaker, Azure ML | Expected to work wherever anywidget works. Not verified |
+| A local notebook on Windows or macOS | The automated tests cover the Python side there; nobody has looked at the viewer |
 | An SSH session, a container or a server with no desktop | The address is printed. Forward both ports it names (`ssh -L`), then open it |
-| VS Code Remote, Codespaces, Dev Containers | Expected to work, because they forward ports for you. Not verified |
-| JupyterHub, Binder, Kaggle, Databricks, SageMaker, Azure ML | Not supported. The viewer's ports are not reachable from your browser, so the frame stays blank (`show()` warns on the first three). Use `show(g, return_handle=True)` with your platform's port forwarding, or a local session |
 
-A viewer that works everywhere a notebook does, without any ports, needs a widget-based integration (see
-[`docs/architecture/plan.md`](architecture/plan.md)); it is not built yet.
+If the widget does not appear in your notebook, `show(g, widget=False)` uses the older route: a small local server with
+the viewer in an `<iframe>`. That route only works where your browser can reach the machine running Python, so on a
+hosted notebook it can leave a blank frame (`show()` warns on Kaggle, JupyterHub or Binder, and Databricks).
 
 ## Jupyter notes
 
-- `show()` auto-detects the kernel; no code changes needed versus a plain script.
-- This is a pragmatic reuse of the same local WebSocket+HTTP server embedded in an `<iframe>`, not
-  a "real" [anywidget](https://anywidget.dev/) integration — it won't survive notebook reopening
-  without rerunning the cell, and won't work over remote Jupyter (JupyterHub, Binder, SSH-forwarded
-  kernels) without port-forwarding. A real anywidget integration is a reasonable future upgrade (see
-  [`docs/architecture/plan.md`](architecture/plan.md)) but isn't built yet.
-- **Google Colab** is detected separately. Its kernel runs on a remote machine, so `show()` serves the viewer page
-  and its WebSocket from a single port and shows that port with Colab's own `serve_kernel_port_as_iframe`. Colab
-  treats a second forwarded port as a different origin and refuses the socket, which is why there is only one.
-  If the viewer says `disconnected (...)`, the address in brackets is where it tried to connect.
-- The viewer's socket is protected by a random secret that only its own URL carries, so another web page in your
-  browser cannot read your graph from the port. If you write your own WebSocket client, connect to `handle.ws_url`.
-- Use `width`/`height` to control the iframe's size (defaults 900x600).
+- `show()` detects the notebook by itself; no code changes are needed compared with a script. It returns nothing, so
+  that calling it as a cell's last line does not print anything under the graph. `show(g, return_handle=True)` returns a
+  handle with `style()`, `color_nodes()`, `reset_style()`, `close()` and, in a notebook, `widget`, the
+  `GraphWidget` itself, which you can place in a layout of your own.
+- `pip install plexgraph` brings in `anywidget`, which the widget needs. Without it `show()` falls back to the older
+  iframe route; `show(g, widget=True)` insists on the widget and says how to install it.
+- Running the cell again, or scrolling a notebook so the output is unloaded and loaded again, rebuilds the viewer, and
+  the kernel streams the graph to it again with the current style. A saved notebook that is reopened while its kernel is
+  still running does the same.
+- With `widget=False` the viewer's socket is protected by a random secret that only its own URL carries, so another web
+  page in your browser cannot read your graph from the port. If you write your own WebSocket client, connect to
+  `handle.ws_url`. (The widget has no socket at all.)
+- **Google Colab**, with `widget=False`: the kernel runs on a remote machine, so the server serves the viewer page and
+  its WebSocket from a single port and shows it with Colab's `serve_kernel_port_as_iframe`. Colab treats a second
+  forwarded port as a different origin and refuses the socket, which is why there is only one.
+- Use `height` to set the widget's height in pixels (default 600); it is always as wide as the cell.
 
 ## Scale and performance
 
