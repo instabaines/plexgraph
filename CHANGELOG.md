@@ -10,7 +10,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   is not a `ZMQInteractiveShell`), so the call waited on a browser that a remote machine cannot open. Colab is now
   detected, `show()` returns immediately, and the viewer is shown through Colab's `serve_kernel_port_as_iframe`. One port
   serves both the viewer page and its WebSocket there, because Colab treats a second forwarded port as a different
-  origin and refuses it.
+  origin and refuses it. The server listens on all interfaces there (unless `host=` is given), because Colab's proxy
+  cannot reach one bound to `localhost`.
 - The bridge declared `websockets>=12`, but it uses the `websockets.asyncio` API, which needs 13 or newer.
 - The viewer accepts `?ws=same-origin` (the server that served the page) or a full `ws://`/`wss://` address, not only a
   port number, and its `disconnected`/`connection error` messages now say which address it tried.

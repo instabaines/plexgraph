@@ -225,9 +225,18 @@ def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_fr
     opened, inline = [], []
     monkeypatch.setattr(launcher.webbrowser, "open", lambda url: opened.append(url))
     monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: inline.append(url))
+    bound = []
+
+    class Recording(launcher.BridgeServer):
+        def __init__(self, *args, **kwargs):
+            bound.append(kwargs["host"])
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(launcher, "BridgeServer", Recording)
     handle = show(_small_graph(), layout_iterations=2, height=480, return_handle=True)  # would hang forever if it blocked
     try:
         assert opened == [] and inline == []
+        assert bound == ["0.0.0.0"]  # Colab's proxy cannot reach a server bound to localhost
         assert handle.http_port == handle.ws_port  # a second proxied port would be a different origin
         assert colab == [(handle.ws_port, "/?ws=same-origin", "100%", "480")]
         # the page really is served by that port

@@ -426,6 +426,11 @@ def show(
 
     app_dir = _static_app_dir()
     single_port = notebook == "colab" and app_dir.exists()  # see _colab_viewer_path
+    if single_port and host == "localhost":
+        # Colab's port proxy reaches the kernel from outside the loopback interface: a server bound to localhost
+        # answers its requests with a 500. The machine is a private, throwaway VM, so listening on every interface
+        # is what the proxy needs (it is also what Colab's own examples do).
+        host = "0.0.0.0"
 
     ready = threading.Event()
     bound_ws_port: list[int] = []
