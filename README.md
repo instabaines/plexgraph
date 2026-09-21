@@ -56,6 +56,15 @@ are optional, needed only by the loaders that take those types: `pip install "hy
 `scipy`, `python-igraph` and `matplotlib` (see `benchmarks/requirements.txt`); `requirements-dev.txt` and
 `uv sync` include all of it.
 
+**Installing the packages elsewhere.** Build the frontend first, because the bridge wheel bundles it, so a
+plain `pip install` can open the viewer (the build fails if the frontend is missing):
+
+```sh
+pnpm --filter @hyperloom/app build
+pip wheel --no-deps packages/core packages/bridge -w dist-wheels
+pip install dist-wheels/*.whl          # brings numpy, msgpack and websockets with it
+```
+
 To visualize your own graph:
 
 ```python

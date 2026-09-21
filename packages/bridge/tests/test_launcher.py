@@ -157,3 +157,34 @@ def test_show_handle_closes_servers_idempotently():
     handle.close()
     handle.close()
     assert not handle.thread.is_alive()
+
+
+def _write_app(directory):
+    directory.mkdir(parents=True)
+    (directory / "index.html").write_text("<title>hyperloom</title>")
+    return directory
+
+
+def test_static_app_prefers_the_bundled_copy_then_the_repo_build_then_the_placeholder(tmp_path, monkeypatch):
+    from hyperloom_bridge import launcher
+
+    bundled, dist, public = tmp_path / "static", tmp_path / "dist", tmp_path / "public"
+    monkeypatch.setattr(launcher, "_APP_BUNDLED", bundled)
+    monkeypatch.setattr(launcher, "_APP_DIST", dist)
+    monkeypatch.setattr(launcher, "_APP_PUBLIC", public)
+
+    assert launcher._static_app_dir() == public  # nothing built yet
+    _write_app(dist)
+    assert launcher._static_app_dir() == dist  # a repo checkout with a build
+    _write_app(bundled)
+    assert launcher._static_app_dir() == bundled  # an installed wheel wins
+
+
+def test_an_empty_build_directory_is_not_mistaken_for_a_frontend(tmp_path, monkeypatch):
+    from hyperloom_bridge import launcher
+
+    (tmp_path / "static").mkdir()
+    monkeypatch.setattr(launcher, "_APP_BUNDLED", tmp_path / "static")
+    monkeypatch.setattr(launcher, "_APP_DIST", tmp_path / "dist")
+    monkeypatch.setattr(launcher, "_APP_PUBLIC", tmp_path / "public")
+    assert launcher._static_app_dir() == tmp_path / "public"

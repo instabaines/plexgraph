@@ -25,3 +25,4 @@ Thumbs.db
 .env.local
 benchmarks/data/
 sample_data/
+dist-wheels/

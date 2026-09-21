@@ -31,17 +31,20 @@ from hyperloom_core.model.ir import Graph
 
 logger = logging.getLogger("hyperloom_bridge.launcher")
 
-# This file lives at packages/bridge/hyperloom_bridge/launcher.py, so
-# parents[2] is packages/. packages/app/dist (built) is preferred;
-# packages/app/public is a static placeholder usable before the build
-# pipeline produces a dist/ bundle.
+# Where the viewer's static files live, in order of preference:
+#   1. hyperloom_bridge/static, the built app bundled into the wheel (an installed package);
+#   2. packages/app/dist, the built app in a repo checkout (this file is packages/bridge/hyperloom_bridge/
+#      launcher.py, so parents[2] is packages/);
+#   3. packages/app/public, a placeholder usable before the frontend has been built.
+_APP_BUNDLED = Path(__file__).resolve().parent / "static"
 _APP_DIST = Path(__file__).resolve().parents[2] / "app" / "dist"
 _APP_PUBLIC = Path(__file__).resolve().parents[2] / "app" / "public"
 
 
 def _static_app_dir() -> Path:
-    if _APP_DIST.exists():
-        return _APP_DIST
+    for candidate in (_APP_BUNDLED, _APP_DIST):
+        if (candidate / "index.html").is_file():
+            return candidate
     return _APP_PUBLIC
 
 
@@ -377,8 +380,9 @@ def show(
     app_dir = _static_app_dir()
     if not app_dir.exists():
         logger.warning(
-            "no static frontend found at %s or %s; the bridge is running but "
-            "there is nothing to serve yet",
+            "no static frontend found at %s, %s or %s; the bridge is running but there is "
+            "nothing to serve yet. From a checkout, build it with `pnpm --filter @hyperloom/app build`.",
+            _APP_BUNDLED,
             _APP_DIST,
             _APP_PUBLIC,
         )
