@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>hyperloom</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='4' cy='8' r='2.5' fill='%232a8bf2'/%3E%3Ccircle cx='12' cy='4' r='2.5' fill='%232a8bf2'/%3E%3Ccircle cx='12' cy='12' r='2.5' fill='%232a8bf2'/%3E%3C/svg%3E" />
     <style>
       html, body { margin: 0; height: 100%; background: #fafafa; }
       #status {
@@ -34,7 +35,17 @@
       }
       #timeline[hidden] { display: none; }
       #timeline input[type="range"] { flex: 1; }
-      #timeline-value { min-width: 8ch; text-align: right; font-variant-numeric: tabular-nums; }
+      #timeline select, #timeline input[type="number"] { font: inherit; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; }
+      #timeline input[type="number"] { width: 8ch; }
+      #ribbon-options { position: fixed; left: 24px; right: 24px; bottom: 20px; display: flex; align-items: center; gap: 18px; padding: 12px 18px; background: rgba(255,255,255,.9); border: 1px solid #e1e7ed; border-radius: 12px; font: 12px system-ui, sans-serif; color: #444; box-sizing: border-box; }
+      #ribbon-options[hidden] { display: none; }
+      #ribbon-options label { display: flex; align-items: center; gap: 8px; }
+      #ribbon-options select, #ribbon-options input { font: inherit; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; }
+      #ribbon-options input { width: 6ch; }
+      #stack-legend .count { color: #7a8797; margin-left: auto; padding-left: 8px; }
+      #timeline-window-label { display: flex; align-items: center; gap: 6px; }
+      #timeline-window-label[hidden] { display: none; }
+      #timeline-value { min-width: 16ch; text-align: right; font-variant-numeric: tabular-nums; }
       #timeline button {
         font: inherit;
         border: 1px solid #ccc;
@@ -134,16 +145,69 @@
         cursor: pointer;
       }
       #export-menu button:hover { background: #f0f0f0; }
+      #status { top: 20px; left: 24px; color: #526276; padding: 8px 12px; }
+      #view-mode { top: 62px; left: 24px; padding: 5px; border: 1px solid #e1e7ed; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px #26384d08; }
+      #view-mode button { padding: 9px 14px; border: 0; border-radius: 8px; color: #526276; }
+      #view-mode button[aria-pressed="true"] { background: #183e51; color: white; }
+      #export { top: auto; bottom: 76px; left: 24px; }
+      #export-toggle { padding: 9px 16px; border-color: #dce3ea; border-radius: 8px; }
+      #right-panel { top: 24px; right: 24px; max-width: 230px; }
+      #right-panel > * { padding: 16px; gap: 10px; border: 1px solid #e1e7ed; border-radius: 12px; box-shadow: 0 4px 18px #26384d08; }
+      #timeline { left: 24px; right: 24px; bottom: 20px; border: 1px solid #e1e7ed; border-radius: 12px; padding: 14px 18px; }
+      input { accent-color: #183e51; }
+      button:focus-visible { outline: 2px solid #2585a5; outline-offset: 3px; }
+      @media (max-width: 640px) { #right-panel { top: 124px; right: 12px; max-width: 160px; } #view-mode { left: 12px; } }
+      #explore { position:fixed; top:124px; left:24px; width:220px; padding:14px; border:1px solid #e1e7ed; border-radius:12px; background:rgba(255,255,255,.96); font:12px system-ui,sans-serif; color:#26384d; }
+      #explore label { display:block; font-weight:600; margin-bottom:8px; }
+      #node-search { box-sizing:border-box; width:100%; padding:9px; border:1px solid #cbd5e1; border-radius:6px; }
+      #search-results { max-height:180px; overflow:auto; }
+      #search-results button { display:block; width:100%; text-align:left; overflow-wrap:anywhere; }
+      #search-results .result-row { display:flex; gap:4px; }
+      #search-results .result-row button + button { width:34px; flex:none; text-align:center; }
+      #explore button { padding:8px; border:1px solid #dce3ea; background:#fff; border-radius:6px; margin-top:5px; cursor:pointer; }
+      #node-inspector { white-space:pre-wrap; overflow-wrap:anywhere; max-height:200px; overflow:auto; margin-top:12px; line-height:1.5; }
+      .explore-actions { display:flex; gap:6px; }
+      @media(max-width:640px) { #explore { top:auto; bottom:130px; left:12px; width:180px; max-height:40vh; overflow:auto; } }
+      #tools { width: 198px; font-size: 12px; }
+      #tools details { border-top: 1px solid #e7ecf1; padding-top: 8px; }
+      #tools details:first-of-type { border-top: 0; padding-top: 0; }
+      #tools summary { font-weight: 600; cursor: pointer; margin-bottom: 6px; color: #26384d; }
+      #tools .field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
+      #tools select, #tools input[type="number"] { font: inherit; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; max-width: 100%; box-sizing: border-box; }
+      #tools .values { max-height: 130px; overflow: auto; display: flex; flex-direction: column; gap: 3px; margin: 4px 0 8px; }
+      #tools .values label { display: flex; gap: 6px; align-items: center; overflow-wrap: anywhere; }
+      #tools .range { display: flex; gap: 6px; align-items: center; margin: 4px 0 8px; }
+      #tools .range input { width: 70px; }
+      #tools .note { color: #526276; line-height: 1.4; overflow-wrap: anywhere; }
+      #tools button { font: inherit; padding: 6px 8px; border: 1px solid #dce3ea; background: #fff; border-radius: 6px; cursor: pointer; }
+      #tools button:disabled { opacity: .45; cursor: default; }
+      #tools .actions { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+      #tools .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+      #tools .chip { padding: 3px 7px; border-radius: 999px; background: #eef3f7; }
+      #tools .zoom { display: flex; gap: 6px; justify-content: flex-end; }
+      #tools .zoom button { width: 32px; font-size: 16px; line-height: 1; }
+      #canvas { margin-left:300px; width:calc(100vw - 460px); }
+      @media(max-width:900px) { #canvas { margin-left:0; width:100vw; height:58vh; margin-top:110px; } #explore { top:auto; bottom:70px; max-height:24vh; overflow:auto; } #right-panel { top:auto; bottom:70px; max-height:24vh; overflow:auto; } }
     </style>
   </head>
   <body>
     <div id="status" hidden></div>
     <canvas id="canvas"></canvas>
     <div id="view-mode" hidden>
-      <button id="view-flat" type="button" aria-pressed="true">Flat</button>
-      <button id="view-stack-layer" type="button" hidden>Stack: layers</button>
-      <button id="view-stack-time" type="button" hidden>Stack: time</button>
+      <button id="view-flat" type="button" aria-pressed="true">Overview</button>
+      <button id="view-stack-layer" type="button" hidden>Layer atlas</button>
+      <button id="view-stack-time" type="button" hidden>Time ribbon</button>
     </div>
+    <section id="explore" aria-label="Explore graph">
+      <label for="node-search">Find a node</label>
+      <input id="node-search" type="search" placeholder="Search by key…" autocomplete="off" />
+      <div id="search-results" aria-live="polite"></div>
+      <div id="node-inspector" hidden></div>
+      <div class="explore-actions">
+        <button id="fit-view" type="button">Fit view</button>
+        <button id="clear-focus" type="button">Show all nodes</button>
+      </div>
+    </section>
     <div id="export">
       <button id="export-toggle" type="button">Export ▾</button>
       <div id="export-menu" hidden>
@@ -156,10 +220,26 @@
     </div>
     <div id="timeline" hidden>
       <button id="timeline-toggle" type="button">All time</button>
+      <select id="timeline-kind" aria-label="Time selection">
+        <option value="instant">At this moment</option>
+        <option value="window">Trailing window</option>
+        <option value="cumulative">Everything so far</option>
+      </select>
+      <label id="timeline-window-label" hidden>last <input id="timeline-window" type="number" min="0" step="any" value="1" aria-label="Window length" /> <span id="timeline-window-unit"></span></label>
       <input id="timeline-slider" type="range" min="0" max="1" step="any" value="0" />
       <span id="timeline-value"></span>
     </div>
+    <div id="ribbon-options" hidden>
+      <label>Buckets <input id="ribbon-buckets" type="number" min="2" max="24" step="1" value="6" aria-label="Number of time buckets" /></label>
+      <label>Split by
+        <select id="ribbon-split" aria-label="How to split time">
+          <option value="time">Equal time</option>
+          <option value="events">Equal number of events</option>
+        </select>
+      </label>
+    </div>
     <div id="right-panel">
+      <div id="tools"></div>
       <div id="layers" hidden></div>
       <div id="stack-legend" hidden></div>
       <div id="node-color-legend" hidden></div>

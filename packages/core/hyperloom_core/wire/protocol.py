@@ -42,17 +42,41 @@ def _connector_payload(graph: Graph) -> list[dict[str, Any]]:
     ]
 
 
+# The browser reads numbers as IEEE doubles, so integers beyond 2**53 would silently collide or round.
+# They cannot be exchanged exactly, so they travel as text (MessagePack also rejects anything past 64 bits).
+_JS_SAFE_INT = 2**53 - 1
+
+
+def _exact(value: Any) -> Any:
+    """Copy of `value` with integers outside JavaScript's exact range replaced by their decimal text."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return str(value) if abs(value) > _JS_SAFE_INT else value
+    if isinstance(value, dict):
+        return {_exact(k): _exact(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_exact(v) for v in value]
+    return value
+
+
 def encode_graph(graph: Graph) -> bytes:
     """Full graph snapshot: schema version, nodes, layers, connectors."""
     payload = {
         "type": "graph",
         "schema_version": graph.schema_version,
         "wire_version": WIRE_PROTOCOL_VERSION,
-        "nodes": [{"id": n.id, "key": n.key, "attrs": n.attrs} for n in graph.nodes()],
-        "layers": [{"id": l.id, "key": l.key, "attrs": l.attrs} for l in graph.layers()],
+        "time_unit": graph.time_unit,
+        # Node identity is what the viewer searches and labels by, so keys are always made exact.
+        "nodes": [{"id": n.id, "key": _exact(n.key), "attrs": n.attrs} for n in graph.nodes()],
+        "layers": [{"id": l.id, "key": _exact(l.key), "attrs": l.attrs} for l in graph.layers()],
         "connectors": _connector_payload(graph),
     }
-    return msgpack.packb(payload, use_bin_type=True)
+    try:
+        return msgpack.packb(payload, use_bin_type=True)
+    except OverflowError:
+        # An attribute holds an integer too large to pack; rare, so the extra copy is only paid then.
+        return msgpack.packb(_exact(payload), use_bin_type=True)
 
 
 def encode_layout_step(step: LayoutStep) -> bytes:

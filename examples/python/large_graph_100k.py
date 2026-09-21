@@ -1,9 +1,6 @@
-"""Phase A scale check: a 100K-node / 200K-edge random graph, per
-docs/architecture/plan.md's exit criterion. Above ~5000 nodes the layout
-falls back to edge-driven placement (no pairwise repulsion) rather than
-full force-directed convergence — see hyperloom_core.algorithms.layout's
-module docstring for why full O(n^2) repulsion isn't feasible at this
-scale in Phase A."""
+"""Explicit 100K-node demo. The layout keeps approximate repulsion active;
+the viewer starts in density overview. Search to inspect a neighborhood.
+For bounded, measured runs use benchmarks/layout_audit.py instead."""
 
 import numpy as np
 

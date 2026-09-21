@@ -1,0 +1,169 @@
+{
+  "suite": "scale",
+  "python": "3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]",
+  "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.43",
+  "git_revision": "42f5f4360b8c52271c87f8e1c0ad7f22f514f3bd",
+  "working_tree_dirty": true,
+  "timeout_seconds": 20.0,
+  "memory_limit_mb": 1024,
+  "results": [
+    {
+      "kind": "random",
+      "nodes": 1000,
+      "seed": 0,
+      "iterations": 10,
+      "memory_mb": 1024,
+      "status": "ok",
+      "connectors": 3000,
+      "expanded_attraction_pairs": 3000,
+      "build_seconds": 0.010719078000022364,
+      "first_step_seconds": 0.04390829300001542,
+      "layout_seconds": 0.3226090150000118,
+      "steps": 10,
+      "termination_flag": true,
+      "finite": true,
+      "peak_rss_mb": 124.15234375,
+      "span": [
+        1.3155085606378574,
+        1.1497136380926016
+      ],
+      "crowded_cell_fraction": 0.255,
+      "edge_to_random_distance": 0.6949134863176343
+    },
+    {
+      "kind": "random",
+      "nodes": 3000,
+      "seed": 0,
+      "iterations": 10,
+      "memory_mb": 1024,
+      "status": "ok",
+      "connectors": 9000,
+      "expanded_attraction_pairs": 9000,
+      "build_seconds": 0.02226686800003108,
+      "first_step_seconds": 0.3150825169999507,
+      "layout_seconds": 3.0459342939999487,
+      "steps": 10,
+      "termination_flag": true,
+      "finite": true,
+      "peak_rss_mb": 595.2578125,
+      "span": [
+        1.1029403670823232,
+        1.0777176351494375
+      ],
+      "crowded_cell_fraction": 0.5816666666666667,
+      "edge_to_random_distance": 0.7302457012717328
+    },
+    {
+      "kind": "random",
+      "nodes": 5000,
+      "seed": 0,
+      "iterations": 10,
+      "memory_mb": 1024,
+      "status": "worker_error",
+      "returncode": 1,
+      "error": "Traceback (most recent call last):\n  File \"/home/amure/Documents/repo/graphviz/benchmarks/layout_audit.py\", line 144, in <module>\n    print(json.dumps(measure(config[\"kind\"], config[\"nodes\"], config[\"seed\"], config[\"iterations\"])))\n                     ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/amure/Documents/repo/graphviz/benchmarks/layout_audit.py\", line 72, in measure\n    for step in force_directed_layout(graph, seed=seed, iterations=iterations):\n                ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/amure/Documents/repo/graphviz/packages/core/hyperloom_core/algorithms/layout.py\", line 102, in force_directed_layout\n    dist = np.linalg.norm(delta, axis=-1)\n  File \"/tmp/hyperloom-eval-venv/lib/python3.14/site-packages/numpy/linalg/_linalg.py\", line 2804, in norm\n    return sqrt(add.reduce(s, axis=axis, keepdims=keepdims))\n                ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nnumpy._core._exceptions._ArrayMemoryError: Unable to allocate 191. MiB for an array with shape (5000, 5000) and data type float64\n"
+    },
+    {
+      "kind": "random",
+      "nodes": 5001,
+      "seed": 0,
+      "iterations": 10,
+      "memory_mb": 1024,
+      "status": "ok",
+      "connectors": 15002,
+      "expanded_attraction_pairs": 15002,
+      "build_seconds": 0.03531549500002029,
+      "first_step_seconds": 0.0220113260000403,
+      "layout_seconds": 0.03337941300003422,
+      "steps": 10,
+      "termination_flag": true,
+      "finite": true,
+      "peak_rss_mb": 51.5625,
+      "span": [
+        0.7803802596998942,
+        0.8620378922021086
+      ],
+      "crowded_cell_fraction": 0.7008598280343932,
+      "edge_to_random_distance": 0.7908431383807711
+    },
+    {
+      "kind": "random",
+      "nodes": 10000,
+      "seed": 0,
+      "iterations": 10,
+      "memory_mb": 1024,
+      "status": "ok",
+      "connectors": 29998,
+      "expanded_attraction_pairs": 29998,
+      "build_seconds": 0.06638937900004294,
+      "first_step_seconds": 0.08626752899999701,
+      "layout_seconds": 0.12399608099997295,
+      "steps": 10,
+      "termination_flag": true,
+      "finite": true,
+      "peak_rss_mb": 61.203125,
+      "span": [
+        0.8215518048886401,
+        0.8676989688643107
+      ],
+      "crowded_cell_fraction": 0.8085,
+      "edge_to_random_distance": 0.786758532185674
+    },
+    {
+      "kind": "random",
+      "nodes": 100000,
+      "seed": 0,
+      "iterations": 10,
+      "memory_mb": 1024,
+      "status": "ok",
+      "connectors": 299997,
+      "expanded_attraction_pairs": 299997,
+      "build_seconds": 0.7141348650000054,
+      "first_step_seconds": 0.5369768080000199,
+      "layout_seconds": 0.7828190079999899,
+      "steps": 10,
+      "termination_flag": true,
+      "finite": true,
+      "peak_rss_mb": 247.4453125,
+      "span": [
+        0.9193014473870234,
+        0.9213018914655746
+      ],
+      "crowded_cell_fraction": 0.97026,
+      "edge_to_random_distance": 0.7839750744957587
+    },
+    {
+      "kind": "hyperedge",
+      "nodes": 1000,
+      "seed": 0,
+      "iterations": 10,
+      "memory_mb": 1024,
+      "status": "ok",
+      "connectors": 1,
+      "expanded_attraction_pairs": 499500,
+      "build_seconds": 0.004850707000002785,
+      "first_step_seconds": 0.1576208289999954,
+      "layout_seconds": 0.7699412299999722,
+      "steps": 10,
+      "termination_flag": true,
+      "finite": true,
+      "peak_rss_mb": 204.04296875,
+      "span": [
+        0.4598705354892804,
+        0.45622352580453274
+      ],
+      "crowded_cell_fraction": 0.45799999999999996,
+      "edge_to_random_distance": null
+    },
+    {
+      "kind": "hyperedge",
+      "nodes": 5001,
+      "seed": 0,
+      "iterations": 10,
+      "memory_mb": 1024,
+      "status": "worker_error",
+      "returncode": 1,
+      "error": "Traceback (most recent call last):\n  File \"/home/amure/Documents/repo/graphviz/benchmarks/layout_audit.py\", line 144, in <module>\n    print(json.dumps(measure(config[\"kind\"], config[\"nodes\"], config[\"seed\"], config[\"iterations\"])))\n                     ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/amure/Documents/repo/graphviz/benchmarks/layout_audit.py\", line 72, in measure\n    for step in force_directed_layout(graph, seed=seed, iterations=iterations):\n                ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/amure/Documents/repo/graphviz/packages/core/hyperloom_core/algorithms/layout.py\", line 89, in force_directed_layout\n    edge_array = np.array(edges, dtype=np.int64) if edges else np.zeros((0, 2), dtype=np.int64)\n                 ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\nMemoryError\n"
+    }
+  ]
+}

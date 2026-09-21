@@ -1,3 +1,7 @@
+import { GraphIndex, type AttributeSummary, type NodeFilter } from "../interaction/graph-index";
+import { aggregateDensity, aggregateGroups } from "./density";
+import { arrowPolygon, memberHull } from "../layout/annotations";
+import { sliceGeometry, type SliceLayout } from "../layout/slices";
 // The WebGL renderer, built on regl per docs/architecture/plan.md section 2
 // (a thin WebGL wrapper rather than adopting Sigma.js/PIXI/deck.gl, since
 // none of them natively model hyperedges or multiplex layers). Phase A
@@ -7,6 +11,14 @@
 // extensions to this same buffer-driven pipeline, not a renderer rewrite.
 
 import createREGL, { Regl } from "regl";
+
+// The canvas is composited as premultiplied alpha over an opaque page, so colour must be blended
+// with source alpha while the destination alpha stays untouched. Without blending, a translucent
+// colour is written as-is (e.g. rgb .6 with alpha .5), which the browser composites to white.
+const OPAQUE_CANVAS_BLEND = {
+  enable: true,
+  func: { srcRGB: "src alpha", dstRGB: "one minus src alpha", srcAlpha: 0, dstAlpha: 1 },
+} as const;
 import { Camera } from "../interaction/camera";
 import type { GraphMessage, LayoutStepMessage, WireConnector, WireLayer, WireNode } from "../ir/types";
 import { decodePositions } from "../ir/types";
@@ -18,6 +30,68 @@ import { convexHull, inflateHull, triangulateFan } from "./hull";
 export interface TimeDomain {
   min: number;
   max: number;
+  /** True when every time-bounded connector is a single instant (t_start === t_end), as in contact sequences. */
+  instantaneous: boolean;
+  /** "epoch_seconds" when times are Unix seconds and should be shown as dates. */
+  unit?: "epoch_seconds" | null;
+}
+
+export const SECONDS_PER_DAY = 86400;
+
+/** A time value for display: dates for epoch seconds (UTC; seconds shown only over short spans), else a number. */
+export function formatTime(t: number, unit: TimeDomain["unit"] = null, span = Infinity): string {
+  if (unit !== "epoch_seconds") return String(Number(t.toPrecision(6)));
+  const iso = new Date(t * 1000).toISOString();
+  if (span > 120 * SECONDS_PER_DAY) return iso.slice(0, 10);
+  return span > 2 * SECONDS_PER_DAY ? iso.slice(0, 16).replace("T", " ") : iso.slice(0, 19).replace("T", " ");
+}
+
+/** How the time slider selects connectors:
+ * - "instant": active exactly at t (t_start <= t <= t_end); right for intervals, empty for most t on point events.
+ * - "window": active at some moment in [t - window, t]; the trailing window that suits contact sequences.
+ * - "cumulative": started at or before t (everything so far). */
+export type TimeMode = "instant" | "window" | "cumulative";
+export interface TimeFilterOptions { mode?: TimeMode; window?: number }
+
+export function connectorActiveAt(c: WireConnector, t: number, mode: TimeMode = "instant", window = 0): boolean {
+  const start = c.t_start ?? -Infinity, end = c.t_end ?? Infinity;
+  if (mode === "cumulative") return start <= t;
+  if (mode === "window") return start <= t && end >= t - window;
+  return start <= t && t <= end;
+}
+
+/** How ribbon buckets divide time: "time" gives every bucket the same duration; "events" gives every bucket
+ * about the same number of events (busy periods get narrow buckets, quiet ones wide). */
+export type TimeSplit = "time" | "events";
+
+/** Ribbon bucket boundaries: `n + 1` increasing times from `domain.min` to `domain.max`. Equal-events
+ * boundaries follow quantiles of the connectors' start times; repeated values collapse, so a stream with many
+ * simultaneous events can yield fewer than `n` buckets. */
+export function timeBucketEdges(connectors: WireConnector[], domain: { min: number; max: number }, n: number, split: TimeSplit = "time"): number[] {
+  n = Math.max(1, Math.floor(n));
+  const width = (domain.max - domain.min) / n || 1;
+  if (split === "time") return Array.from({ length: n + 1 }, (_, i) => (i === n ? domain.max : domain.min + i * width));
+  const starts = connectors.map(c => c.t_start).filter((t): t is number => t !== null && Number.isFinite(t)).sort((a, b) => a - b);
+  const edges = [domain.min];
+  for (let i = 1; i < n; i++) {
+    const t = starts[Math.floor((i * starts.length) / n)];
+    if (t !== undefined && t > edges[edges.length - 1] && t < domain.max) edges.push(t);
+  }
+  edges.push(domain.max);
+  return edges.length >= 2 && edges[edges.length - 1] > edges[0] ? edges : [domain.min, domain.min + width * n];
+}
+
+/** Lines for a panel heading. A date range ("a → b") is stacked so neighbouring panel headings cannot overlap. */
+export function panelHeadingLines(index: number, label: string): string[] {
+  const [from, to] = label.split(" → ");
+  return to === undefined ? [`${index + 1} · ${label}`] : [`${index + 1} · ${from}`, `→ ${to}`];
+}
+
+/** Whether a connector belongs in ribbon bucket [start, end). Buckets are half-open so an event exactly on a
+ * boundary lands in one bucket only; the last bucket also owns its end point. */
+export function bucketContains(c: WireConnector, start: number, end: number, isLast: boolean): boolean {
+  const cStart = c.t_start ?? -Infinity, cEnd = c.t_end ?? Infinity;
+  return (isLast ? cStart <= end : cStart < end) && cEnd >= start;
 }
 
 /** A layer plus the color assigned to it for rendering, handed to the app
@@ -89,6 +163,8 @@ interface StackSlice {
  * mirrors StackSlice minus the connector list (the app doesn't need it). */
 export interface StackSliceInfo {
   label: string;
+  /** Connectors in this slice. */
+  count: number;
   color: [number, number, number, number];
 }
 
@@ -183,6 +259,12 @@ export interface RendererOptions {
   nodeLabel?: NodeLabelSpec;
   /** Called when the hovered node changes (null when nothing is hovered). */
   onHover?: (nodeId: number | null) => void;
+  /** Called after a graph snapshot has been loaded and indexed (node attributes are then available). */
+  onGraphLoaded?: () => void;
+  /** Called when a group is clicked in the grouped overview (see setGroupBy). */
+  onGroupClick?: (attribute: string, value: string) => void;
+  /** Called when a node is clicked (pointer released without dragging). */
+  onNodeClick?: (nodeId: number, event: { shiftKey: boolean }) => void;
   /** Called after loadGraph with the graph's temporal extent, or null if
    * it has no temporal connectors — lets the app show/hide a timeline UI. */
   onTimeDomain?: (domain: TimeDomain | null) => void;
@@ -207,6 +289,9 @@ type VisualDefaults = Required<
   Omit<
     RendererOptions,
     | "onHover"
+    | "onNodeClick"
+    | "onGroupClick"
+    | "onGraphLoaded"
     | "onTimeDomain"
     | "onLayers"
     | "onStackChange"
@@ -274,13 +359,19 @@ function decodePickedId(pixel: Uint8Array): number | null {
 export function computeTimeDomain(connectors: WireConnector[]): TimeDomain | null {
   let min = Infinity;
   let max = -Infinity;
+  let bounded = 0, instants = 0;
   for (const c of connectors) {
     if (c.t_start !== null) min = Math.min(min, c.t_start);
     if (c.t_end !== null) max = Math.max(max, c.t_end);
+    if (c.t_start !== null && c.t_end !== null) { bounded++; if (c.t_start === c.t_end) instants++; }
   }
   if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
-  return { min, max };
+  return { min, max, instantaneous: bounded > 0 && instants === bounded };
 }
+
+const DETAIL_LIMIT = 5000;
+const DENSITY_RESOLUTION = 48;
+const SLICE_DENSITY_RESOLUTION = 32; // small atlas/ribbon panels: coarser cells and fewer links keep frames cheap
 
 export class Renderer {
   private regl: Regl;
@@ -298,6 +389,118 @@ export class Renderer {
   private edgeColorByAttr: string | null;
   private nodeLabelSpec: NodeLabelSpec;
 
+  private index = new GraphIndex([], []);
+  private focusedNodes: Set<number> | null = null;
+  private nodeFilterNodes: Set<number> | null = null;
+  private highlighted: number[] = [];
+  private nodeSizeBuffer: ReturnType<Regl["buffer"]> | null = null;
+  private nodeSizeBy: string | null = null;
+  private onNodeClick: ((nodeId: number, event: { shiftKey: boolean }) => void) | null;
+  private onGraphLoaded: (() => void) | null;
+  private onGroupClick: ((attribute: string, value: string) => void) | null;
+  private focusedConnectors: Set<number> | null = null;
+  private selectedNode: number | null = null;
+  private visibleNodeIds: number[] = [];
+  private nodeElements: ReturnType<Regl["elements"]> | null = null;
+  private sliceNodeElements: ReturnType<Regl["elements"]> | null = null;
+  private dirty = true;
+  private pointerDirty = true;
+  private lastCamera = "";
+  private densityDirty = true;
+  private densityNodes = new Float32Array(0);
+  private nodeColorValues = new Float32Array(0);
+  private densityEdges = new Float32Array(0);
+  private densityRanges: {nodes: StackDrawRange; edges: StackDrawRange}[] = [];
+  private densityNodeBuffer: ReturnType<Regl["buffer"]> | null = null;
+  private densityEdgeBuffer: ReturnType<Regl["buffer"]> | null = null;
+  private drawDensity: (slice: number) => void = () => {};
+  // Level of detail: individual nodes up to DETAIL_LIMIT; beyond that, either the nodes inside the current
+  // viewport (region detail, when the viewport is small enough) or aggregated cells/groups (overview).
+  private densityMode = false;
+  private regionNodes: Set<number> | null = null;
+  private groupBy: string | null = null;
+  private lodPending = false;
+  private lodChangedAt = 0;
+  private densityCounts: number[] = [];
+  private densityGroupKeys: string[] = [];
+  private densityLinksShown = 0;
+  private densityLinksTotal = 0;
+  private densityNodesInView = 0;
+
+  /** Nodes allowed by the neighbourhood focus and the attribute/degree filter together (null = every node). */
+  private baseNodes(): Set<number> | null {
+    const focus = this.focusedNodes, filter = this.nodeFilterNodes;
+    if (!focus || !filter) return focus ?? filter;
+    const both = new Set<number>();
+    for (const n of focus) if (filter.has(n)) both.add(n);
+    return both;
+  }
+
+  /** Base nodes further restricted to the viewport when zoomed into a large graph (null = no restriction). */
+  private viewNodes(): Set<number> | null {
+    return this.regionNodes ?? this.baseNodes();
+  }
+
+  private nodesInViewport(base: Set<number> | null): number[] {
+    const aspect = this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1);
+    const hw = (aspect / this.camera.zoom) * 1.15, hh = (1 / this.camera.zoom) * 1.15;
+    const { x: cx, y: cy } = this.camera;
+    const out: number[] = [];
+    const test = (n: number) => {
+      if (Math.abs(this.positions[n * 2] - cx) <= hw && Math.abs(this.positions[n * 2 + 1] - cy) <= hh) out.push(n);
+    };
+    if (base) base.forEach(test); else for (let n = 0; n < this.numNodes; n++) test(n);
+    return out;
+  }
+
+  private evaluateLod(): void {
+    const base = this.baseNodes();
+    const total = base?.size ?? this.numNodes;
+    this.regionNodes = null;
+    this.densityNodesInView = total;
+    if (this.stackAxis !== null) { this.densityMode = total > DETAIL_LIMIT; return; }
+    if (this.groupBy !== null) { this.densityMode = total > 0; return; }
+    if (total <= DETAIL_LIMIT) { this.densityMode = false; return; }
+    const inView = this.nodesInViewport(base);
+    this.densityNodesInView = inView.length;
+    if (inView.length <= DETAIL_LIMIT) { this.regionNodes = new Set(inView); this.densityMode = false; }
+    else this.densityMode = true;
+  }
+
+  private needsLod(): boolean {
+    return this.stackAxis === null && this.groupBy === null && (this.baseNodes()?.size ?? this.numNodes) > DETAIL_LIMIT;
+  }
+
+  private markLodStale(): void {
+    if (!this.needsLod()) return;
+    this.lodPending = true;
+    this.lodChangedAt = performance.now();
+  }
+
+  /** Re-evaluate the level of detail once the camera (or layout) has stopped changing. */
+  private applyLod(): void {
+    this.lodPending = false;
+    const beforeMode = this.densityMode, beforeRegion = this.regionNodes;
+    this.evaluateLod();
+    const same = beforeMode === this.densityMode && beforeRegion?.size === this.regionNodes?.size
+      && (!beforeRegion || !this.regionNodes || [...beforeRegion].every(n => this.regionNodes!.has(n)));
+    if (!same) this.refreshVisibleSet(false);
+    else if (this.densityMode) this.dirty = this.densityDirty = true;
+  }
+
+  /** What is on screen now: individual nodes, the nodes in the viewport of a larger graph, aggregated
+   * spatial cells, or attribute groups. */
+  getLodState(): { mode: "detail" | "region" | "overview" | "groups"; nodesInView: number; nodesDrawn: number } {
+    const mode = this.densityMode ? (this.groupBy !== null && this.stackAxis === null ? "groups" : "overview") : this.regionNodes ? "region" : "detail";
+    return { mode, nodesInView: this.densityNodesInView, nodesDrawn: this.densityMode ? this.densityCounts.length : this.visibleNodeIds.length };
+  }
+
+  /** Aggregate nodes into one point per distinct value of a categorical attribute (community collapse); null expands them. */
+  setGroupBy(attribute: string | null): void {
+    this.groupBy = attribute;
+    this.refreshVisibleSet();
+    this.fitView();
+  }
   private numNodes = 0;
   private positions: Float32Array<ArrayBufferLike> = new Float32Array(0);
   private nodeLabelText: (string | null)[] = [];
@@ -316,6 +519,8 @@ export class Renderer {
   private allHyperedges: WireConnector[] = [];
   private timeDomain: TimeDomain | null = null;
   private currentTimeFilter: number | null = null;
+  private timeMode: TimeMode = "instant";
+  private timeWindow = 0;
   private layers: WireLayer[] = [];
   // null = show every layer (default); otherwise only connectors whose
   // layer_id is in this set (plus layer-less connectors, always shown).
@@ -378,8 +583,13 @@ export class Renderer {
   // node's identity is trackable across planes via the "thread" lines.
   // Replaces the flat edges/colored-edges/hulls/arrows/nodes entirely
   // while active — see the loop().
+  private slicePolygons: { points: {x: number; y: number}[]; color: [number, number, number, number]; kind: "hull" | "arrow" }[][] = [];
+  private sliceTriangleRanges: { offset: number; count: number }[] = [];
+  private sliceTriangleBuffer: ReturnType<Regl["buffer"]> | null = null;
   private stackAxis: StackAxis = null;
+  private sliceLayout: SliceLayout = "stack";
   private stackTimeBuckets = 6;
+  private stackTimeSplit: TimeSplit = "time";
   private stackSlices: StackSlice[] = [];
   // Persisted so positions can be recomputed cheaply on every layout step
   // without recomputing slice membership (which connector is on which
@@ -455,6 +665,9 @@ export class Renderer {
   constructor(private canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.opts = { ...DEFAULTS, ...options };
     this.onHover = options.onHover ?? null;
+    this.onNodeClick = options.onNodeClick ?? null;
+    this.onGraphLoaded = options.onGraphLoaded ?? null;
+    this.onGroupClick = options.onGroupClick ?? null;
     this.onTimeDomain = options.onTimeDomain ?? null;
     this.onLayers = options.onLayers ?? null;
     this.onStackChange = options.onStackChange ?? null;
@@ -491,10 +704,12 @@ export class Renderer {
     this.buildDrawCommands();
     canvas.addEventListener("pointermove", this.onPointerMove);
     canvas.addEventListener("pointerleave", this.onPointerLeave);
+    canvas.addEventListener("pointerdown", this.onPointerDown);
+    canvas.addEventListener("pointerup", this.onPointerUp);
 
-    if (this.nodeLabelSpec) {
+    {
       const labelCanvas = document.createElement("canvas");
-      labelCanvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;pointer-events:none;";
+      labelCanvas.style.cssText = "position:fixed;margin:0;pointer-events:none;";
       canvas.parentElement?.insertBefore(labelCanvas, canvas.nextSibling);
       this.labelCanvas = labelCanvas;
       this.labelCtx = labelCanvas.getContext("2d");
@@ -504,6 +719,7 @@ export class Renderer {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
+    this.pointerDirty = true;
     const rect = this.canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     this.pointerPx = {
@@ -512,8 +728,36 @@ export class Renderer {
     };
   };
 
+  private pressAt: { x: number; y: number } | null = null;
+
+  private onPointerDown = (e: PointerEvent): void => {
+    this.pressAt = { x: e.clientX, y: e.clientY };
+  };
+
+  private onPointerUp = (e: PointerEvent): void => {
+    const press = this.pressAt;
+    this.pressAt = null;
+    if (!press || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) return;
+    this.onPointerMove(e); // make sure hover reflects the release position before reading it
+    if (this.densityMode) {
+      const rect = this.canvas.getBoundingClientRect();
+      const hit = this.densityPointAt(e.clientX - rect.left, e.clientY - rect.top);
+      if (hit < 0) return;
+      const key = this.densityGroupKeys[hit];
+      if (key !== undefined && this.groupBy !== null) { this.onGroupClick?.(this.groupBy, key); return; }
+      this.camera.x = this.densityNodes[hit * 7];
+      this.camera.y = this.densityNodes[hit * 7 + 1];
+      this.camera.zoom = Math.min(50, this.camera.zoom * 3);
+      this.dirty = this.pointerDirty = true;
+      return;
+    }
+    if (this.stackAxis !== null) this.updateSliceHover(); else this.updateHover();
+    if (this.hoveredNodeId !== null) this.onNodeClick?.(this.hoveredNodeId, { shiftKey: e.shiftKey });
+  };
+
   private onPointerLeave = (): void => {
     this.pointerPx = null;
+    this.pointerDirty = true;
   };
 
   private buildDrawCommands(): void {
@@ -521,6 +765,7 @@ export class Renderer {
 
     this.positionBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
     this.nodeColorBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
+    this.nodeSizeBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
     this.idBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
     this.arrowCornerBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
     this.arrowSrcDstBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
@@ -534,6 +779,11 @@ export class Renderer {
     this.stackedEdgePositionBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
     this.stackedEdgeColorBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
     this.stackThreadPositionBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
+    this.nodeElements = regl.elements({data: new Uint32Array(0), primitive: "points"});
+    this.sliceNodeElements = regl.elements({data: new Uint32Array(0), primitive: "points"});
+    this.densityNodeBuffer = regl.buffer({data: new Float32Array(0), usage: "dynamic"});
+    this.densityEdgeBuffer = regl.buffer({data: new Float32Array(0), usage: "dynamic"});
+    this.sliceTriangleBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
     this.stackPlaneBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
 
     // Nodes render with per-vertex color (not a uniform) so individual
@@ -547,13 +797,14 @@ export class Renderer {
         precision mediump float;
         attribute vec2 position;
         attribute vec4 color;
+        attribute float sizeMul;
         uniform mat3 view;
         uniform float pointSize;
         varying vec4 vColor;
         void main() {
           vec3 p = view * vec3(position, 1.0);
           gl_Position = vec4(p.xy, 0, 1);
-          gl_PointSize = pointSize;
+          gl_PointSize = pointSize * sizeMul;
           vColor = color;
         }
       `,
@@ -569,12 +820,16 @@ export class Renderer {
       attributes: {
         position: () => this.positionBuffer!,
         color: () => this.nodeColorBuffer!,
+        sizeMul: () => this.nodeSizeBuffer!,
       },
       uniforms: {
         view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
         pointSize: this.opts.nodeRadiusPx * 2,
       },
-      count: () => this.numNodes,
+      elements: () => this.nodeElements!,
+      count: () => this.visibleNodeIds.length,
+      blend: OPAQUE_CANVAS_BLEND,
+      depth: { enable: false },
       primitive: "points",
     });
 
@@ -636,6 +891,8 @@ export class Renderer {
         viewportSize: (_ctx: any) => [this.canvas.clientWidth, this.canvas.clientHeight],
         edgeWidthPx: this.opts.edgeWidthPx,
       },
+      blend: OPAQUE_CANVAS_BLEND,
+      depth: { enable: false },
       primitive: "triangles",
     });
 
@@ -674,6 +931,8 @@ export class Renderer {
         view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
         color: this.opts.edgeColor,
       },
+      blend: OPAQUE_CANVAS_BLEND,
+      depth: { enable: false },
       primitive: "lines",
     });
 
@@ -711,7 +970,7 @@ export class Renderer {
       // and sit behind edges/nodes.
       blend: {
         enable: true,
-        func: { srcRGB: "src alpha", srcAlpha: 1, dstRGB: "one minus src alpha", dstAlpha: "one minus src alpha" },
+        func: { srcRGB: "src alpha", dstRGB: "one minus src alpha", srcAlpha: 0, dstAlpha: 1 },
       },
       depth: { enable: false },
       count: () => this.hyperedgeTriangleVertexCount,
@@ -748,7 +1007,45 @@ export class Renderer {
       },
       blend: {
         enable: true,
-        func: { srcRGB: "src alpha", srcAlpha: 1, dstRGB: "one minus src alpha", dstAlpha: "one minus src alpha" },
+        func: { srcRGB: "src alpha", dstRGB: "one minus src alpha", srcAlpha: 0, dstAlpha: 1 },
+      },
+      depth: { enable: false },
+      offset: regl.prop<StackDrawRange, "offset">("offset"),
+      count: regl.prop<StackDrawRange, "count">("count"),
+      primitive: "triangles",
+    });
+
+    const sliceTriangleDraw = regl({
+      vert: `
+        precision mediump float;
+        attribute vec2 position;
+        attribute vec4 color;
+        uniform mat3 view;
+        varying vec4 vColor;
+        void main() {
+          vec3 p = view * vec3(position, 1.0);
+          gl_Position = vec4(p.xy, 0, 1);
+          vColor = color;
+        }
+      `,
+      frag: `
+        precision mediump float;
+        varying vec4 vColor;
+        void main() {
+          gl_FragColor = vColor;
+        }
+      `,
+      attributes: {
+        // Interleaved buffer: 6 floats/vertex (x, y, r, g, b, a).
+        position: { buffer: () => this.sliceTriangleBuffer!, offset: 0, stride: 24 },
+        color: { buffer: () => this.sliceTriangleBuffer!, offset: 8, stride: 24 },
+      },
+      uniforms: {
+        view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
+      },
+      blend: {
+        enable: true,
+        func: { srcRGB: "src alpha", dstRGB: "one minus src alpha", srcAlpha: 0, dstAlpha: 1 },
       },
       depth: { enable: false },
       offset: regl.prop<StackDrawRange, "offset">("offset"),
@@ -785,6 +1082,7 @@ export class Renderer {
         pointSize: this.opts.nodeRadiusPx * 1.6,
         color: [this.opts.nodeColor[0], this.opts.nodeColor[1], this.opts.nodeColor[2], 0.9],
       },
+      elements: () => this.sliceNodeElements!,
       offset: regl.prop<StackDrawRange, "offset">("offset"),
       count: regl.prop<StackDrawRange, "count">("count"),
       primitive: "points",
@@ -825,7 +1123,7 @@ export class Renderer {
       // actually occludes the plane behind it.
       blend: {
         enable: true,
-        func: { srcRGB: "src alpha", srcAlpha: 1, dstRGB: "one minus src alpha", dstAlpha: "one minus src alpha" },
+        func: { srcRGB: "src alpha", dstRGB: "one minus src alpha", srcAlpha: 0, dstAlpha: 1 },
       },
       depth: { enable: false },
       offset: regl.prop<StackDrawRange, "offset">("offset"),
@@ -859,7 +1157,7 @@ export class Renderer {
       },
       blend: {
         enable: true,
-        func: { srcRGB: "src alpha", srcAlpha: 1, dstRGB: "one minus src alpha", dstAlpha: "one minus src alpha" },
+        func: { srcRGB: "src alpha", dstRGB: "one minus src alpha", srcAlpha: 0, dstAlpha: 1 },
       },
       depth: { enable: false },
       count: () => this.stackThreadList.length * 2,
@@ -913,6 +1211,8 @@ export class Renderer {
         arrowT: this.opts.arrowT,
         color: this.opts.arrowColor,
       },
+      blend: OPAQUE_CANVAS_BLEND,
+      depth: { enable: false },
       count: () => this.directedEdges.length * 3,
       primitive: "triangles",
     });
@@ -952,11 +1252,35 @@ export class Renderer {
         // without changing what's drawn to the visible canvas.
         pointSize: this.opts.nodeRadiusPx * 3,
       },
-      count: () => this.numNodes,
+      elements: () => this.nodeElements!,
+      count: () => this.visibleNodeIds.length,
       primitive: "points",
       framebuffer: () => this.pickFbo!,
     });
 
+    const densityNodeDraw = regl({
+      vert: `precision mediump float; attribute vec2 position; attribute float size; attribute vec4 color; uniform mat3 view; varying vec4 vColor;
+        void main(){vec3 p=view*vec3(position,1.0);gl_Position=vec4(p.xy,0,1);gl_PointSize=size;vColor=color;}`,
+      frag: `precision mediump float; varying vec4 vColor; void main(){vec2 c=gl_PointCoord-vec2(.5);if(dot(c,c)>.25)discard;gl_FragColor=vColor;}`,
+      attributes: {position:{buffer:()=>this.densityNodeBuffer!,stride:28,offset:0}, size:{buffer:()=>this.densityNodeBuffer!,stride:28,offset:8}, color:{buffer:()=>this.densityNodeBuffer!,stride:28,offset:12}},
+      uniforms: {view:()=>this.camera.matrix(this.canvas.clientWidth/this.canvas.clientHeight)},
+      primitive:"points", depth:{enable:false}, blend:OPAQUE_CANVAS_BLEND,
+      offset:regl.prop<StackDrawRange,"offset">("offset"), count:regl.prop<StackDrawRange,"count">("count"),
+    });
+    const densityEdgeDraw = regl({
+      vert: `precision mediump float; attribute vec2 position; attribute float alpha; uniform mat3 view; varying float vAlpha; void main(){vec3 p=view*vec3(position,1.0);gl_Position=vec4(p.xy,0,1);vAlpha=alpha;}`,
+      frag: `precision mediump float; varying float vAlpha; void main(){gl_FragColor=vec4(.42,.5,.58,vAlpha);}`,
+      attributes:{position:{buffer:()=>this.densityEdgeBuffer!,stride:12,offset:0}, alpha:{buffer:()=>this.densityEdgeBuffer!,stride:12,offset:8}},
+      uniforms:{view:()=>this.camera.matrix(this.canvas.clientWidth/this.canvas.clientHeight)},
+      primitive:"lines", depth:{enable:false}, blend:OPAQUE_CANVAS_BLEND,
+      offset:regl.prop<StackDrawRange,"offset">("offset"), count:regl.prop<StackDrawRange,"count">("count"),
+    });
+    this.drawDensity = slice => {
+      const range = this.densityRanges[slice];
+      if (!range) return;
+      if (range.edges.count) densityEdgeDraw(range.edges);
+      if (range.nodes.count) densityNodeDraw(range.nodes);
+    };
     this.drawNodes = () => nodeDraw();
     this.drawEdges = () => {
       if (this.useThinEdges) {
@@ -976,9 +1300,12 @@ export class Renderer {
     this.drawStackedScene = () => {
       for (let s = 0; s < this.stackNodeSliceCount; s++) {
         stackPlaneDraw({ offset: s * 6, count: 6 });
+        if (this.densityMode) { this.drawDensity(s); continue; }
+        const triangles = this.sliceTriangleRanges[s];
+        if (triangles?.count) sliceTriangleDraw(triangles);
         const range = this.stackSliceEdgeVertexRanges[s];
         if (range && range.count > 0) stackedEdgeDraw(range);
-        stackedNodeDraw({ offset: s * this.numNodes, count: this.numNodes });
+        stackedNodeDraw({ offset: s * this.visibleNodeIds.length, count: this.visibleNodeIds.length });
       }
     };
     this.drawPick = () => (this.numNodes > 0 ? pickDraw() : undefined);
@@ -1008,17 +1335,282 @@ export class Renderer {
     this.setHovered(decodePickedId(pixel));
   }
 
+  /** Hit-test frontmost panels first; blank foreground panels occlude back nodes. */
+  private updateSliceHover(): void {
+    if (!this.pointerPx) { this.setHovered(null); return; }
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+    const px = this.pointerPx.x * w / this.canvas.width, py = this.pointerPx.y * h / this.canvas.height;
+    const g = this.getSliceGeometry();
+    for (let s = this.stackNodeSliceCount - 1; s >= 0; s--) {
+      const [dx, dy] = g.offset(s);
+      const [left, bottom] = this.worldToScreen(g.bounds[0] + dx, g.bounds[1] + dy, w, h);
+      const [right, top] = this.worldToScreen(g.bounds[2] + dx, g.bounds[3] + dy, w, h);
+      const radius = Math.max(6, this.opts.nodeRadiusPx);
+      if (px < left - radius || px > right + radius || py < top - radius || py > bottom + radius) continue;
+      let found: number | null = null, nearest = radius * radius;
+      for (const n of this.visibleNodeIds) {
+        const [x, y] = this.worldToScreen(...g.point(n, s), w, h);
+        const distance = (px - x) ** 2 + (py - y) ** 2;
+        if (distance < nearest) { found = n; nearest = distance; }
+      }
+      if (found !== null) { this.setHovered(found); return; }
+      if (px >= left && px <= right && py >= top && py <= bottom) break;
+    }
+    this.setHovered(null);
+  }
+
   private setHovered(nodeId: number | null): void {
     if (nodeId === this.hoveredNodeId) return;
     this.hoveredNodeId = nodeId;
     this.onHover?.(nodeId);
   }
 
+  searchNodes(query: string): WireNode[] { return this.index.search(query); }
+
+  inspectNode(nodeId: number): {node: WireNode; neighbors: number; connectors: number} | null {
+    const node = this.index.nodes[nodeId];
+    if (!node) return null;
+    const neighborhood = this.index.neighborhood(nodeId);
+    return {node, neighbors: neighborhood.nodes.size - 1, connectors: neighborhood.connectors.size};
+  }
+
+  focusNeighborhood(nodeId: number | null): void {
+    if (nodeId !== null && !this.index.nodes[nodeId]) throw new RangeError("Unknown node id");
+    const neighborhood = nodeId === null ? null : this.index.neighborhood(nodeId);
+    this.selectedNode = nodeId;
+    this.focusedNodes = neighborhood?.nodes ?? null;
+    this.focusedConnectors = neighborhood?.connectors ?? null;
+    this.refreshVisibleSet();
+    this.fitView();
+  }
+
+  private refreshVisibleSet(reevaluate = true): void {
+    if (reevaluate) this.evaluateLod();
+    this.updateNodeElements();
+    this.setEdgeSet(this.filterConnectors(this.allConnectors));
+    this.setHyperedgeSet(this.filterConnectors(this.allHyperedges));
+    if (this.stackAxis !== null) this.rebuildStackSlices();
+    this.dirty = this.densityDirty = this.pointerDirty = true;
+  }
+
+  /** Attribute names with their value counts or numeric ranges, for building filter/colour/size controls. */
+  getNodeAttributes(): AttributeSummary[] { return this.index.attributeSummary(); }
+
+  /** Show only nodes passing the filter (attribute values, numeric range, degree); connectors need every
+   * endpoint visible. Node positions do not change. Pass null to clear. Composes with neighbourhood focus and
+   * with the layer/time filters. Returns how many nodes pass. */
+  setNodeFilter(filter: NodeFilter | null): number {
+    this.nodeFilterNodes = filter ? this.index.matchNodes(filter) : null;
+    this.refreshVisibleSet();
+    return this.nodeFilterNodes?.size ?? this.numNodes;
+  }
+
+  /** Number of nodes currently eligible to be drawn (after focus and node filter). */
+  getVisibleNodeCount(): number { return this.baseNodes()?.size ?? this.numNodes; }
+
+  /** Colour nodes by an attribute (one colour per distinct value), or null for the plain node colour. */
+  setNodeColorBy(attribute: string | null): void {
+    this.nodeColorByAttr = attribute;
+    this.resolveNodeColors(this.index.nodes);
+    this.dirty = this.densityDirty = true;
+  }
+
+  /** Scale node size by "degree", by a numeric attribute, or null for uniform size. Sizes span 0.7x-3x. */
+  setNodeSizeBy(by: string | null): void {
+    const nodes = this.index.nodes;
+    const raw = new Float64Array(nodes.length).fill(NaN);
+    if (by === "degree") nodes.forEach((n, i) => (raw[i] = this.index.degree(n.id)));
+    else if (by !== null) nodes.forEach((n, i) => { const v = n.attrs[by]; if (typeof v === "number" && Number.isFinite(v)) raw[i] = v; });
+    let lo = Infinity, hi = -Infinity;
+    for (const v of raw) if (!Number.isNaN(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    const sizes = new Float32Array(nodes.length).fill(1);
+    if (by !== null && hi > lo) raw.forEach((v, i) => { if (!Number.isNaN(v)) sizes[i] = 0.7 + 2.3 * Math.sqrt((v - lo) / (hi - lo)); });
+    this.nodeSizeBy = by !== null && hi > lo ? by : null;
+    this.nodeSizeBuffer?.({ data: sizes, usage: "static" } as any);
+    this.dirty = true;
+  }
+
+  getNodeSizeBy(): string | null { return this.nodeSizeBy; }
+
+  getNodeKey(id: number): string | null { return this.nodeKeys[id] ?? null; }
+
+  /** Canvas-relative CSS pixel position of a drawn node in the flat view, or null if it is not individually drawn. */
+  getNodeScreenPosition(id: number): [number, number] | null {
+    if (this.stackAxis !== null || this.densityMode || !this.visibleNodeIds.includes(id)) return null;
+    return this.worldToScreen(this.positions[id * 2], this.positions[id * 2 + 1], this.canvas.clientWidth, this.canvas.clientHeight);
+  }
+
+  /** Ring and label these nodes (for example a selection); pass [] to clear. Only affects the flat view. */
+  setHighlightedNodes(ids: number[]): void {
+    this.highlighted = ids.filter(id => !!this.index.nodes[id]);
+    this.pointerDirty = true;
+  }
+
+  /** Show only the fewest-hop route between two nodes (any direction; a hyperedge is one hop) and fit it.
+   * Clears the attribute filter so the whole route is visible. Returns null if the nodes are not connected. */
+  focusPath(from: number, to: number): { nodes: number[]; connectors: number[]; hops: number } | null {
+    const path = this.index.shortestPath(from, to);
+    if (!path) return null;
+    this.nodeFilterNodes = null;
+    this.selectedNode = null;
+    this.focusedNodes = new Set(path.nodes);
+    this.focusedConnectors = new Set(path.connectors);
+    this.refreshVisibleSet();
+    this.fitView();
+    return { ...path, hops: path.connectors.length };
+  }
+
+  /** Multiply the camera zoom (e.g. 1.5 to zoom in, 1/1.5 to zoom out). */
+  zoomBy(factor: number): void {
+    this.camera.zoom = Math.min(50, Math.max(0.02, this.camera.zoom * factor));
+    this.dirty = this.pointerDirty = true;
+  }
+
+  fitView(): void {
+    let left=Infinity, right=-Infinity, bottom=Infinity, top=-Infinity;
+    const geometry = this.stackAxis !== null ? this.getSliceGeometry() : null;
+    const base = this.baseNodes();
+    const fitIds: Iterable<number> = geometry ? this.visibleNodeIds : base ?? Array.from({length:this.numNodes},(_,i)=>i);
+    for(let slice=0; slice<(geometry ? this.stackNodeSliceCount : 1); slice++) {
+      for(const n of fitIds) {
+        const [x,y] = geometry ? geometry.point(n,slice) : [this.positions[n*2],this.positions[n*2+1]];
+        left=Math.min(left,x);right=Math.max(right,x);bottom=Math.min(bottom,y);top=Math.max(top,y);
+      }
+    }
+    if (!Number.isFinite(left)) {left=bottom=-.5;right=top=.5;}
+    this.camera.x=(left+right)/2;this.camera.y=(bottom+top)/2;
+    this.camera.zoom=Math.min(20,1.4/Math.max(top-bottom,.1),1.4*(this.canvas.clientWidth/Math.max(this.canvas.clientHeight,1))/Math.max(right-left,.1));
+    this.dirty=this.pointerDirty=true;
+  }
+
+  private updateNodeElements(): void {
+    const view = this.viewNodes();
+    this.visibleNodeIds = view ? Array.from(view) : Array.from({length:this.numNodes},(_,i)=>i);
+    this.nodeElements?.({data:new Uint32Array(this.visibleNodeIds),primitive:"points"} as any);
+    const ids = new Uint32Array(this.densityMode ? 0 : this.visibleNodeIds.length*this.stackNodeSliceCount);
+    if (!this.densityMode) for(let s=0;s<this.stackNodeSliceCount;s++) this.visibleNodeIds.forEach((n,i)=>ids[s*this.visibleNodeIds.length+i]=s*this.numNodes+n);
+    this.sliceNodeElements?.({data:ids,primitive:"points"} as any);
+  }
+
+  private rebuildDensity(): void {
+    const nodeData:number[]=[],edgeData:number[]=[];
+    this.densityRanges=[];this.densityCounts=[];this.densityGroupKeys=[];this.densityLinksShown=0;this.densityLinksTotal=0;
+    const geometry = this.stackAxis !== null ? this.getSliceGeometry() : null;
+    const grouping = geometry ? null : this.groupBy;
+    const slices = geometry ? this.stackSlices : [{connectors:[...this.filterConnectors(this.allConnectors),...this.filterConnectors(this.allHyperedges)]}];
+    slices.forEach((slice,s)=>{
+      let active = geometry ? Array.from(new Set(slice.connectors.flatMap(c=>c.endpoints))) : this.visibleNodeIds;
+      // Aggregate only what is on screen so cells get finer as you zoom; groups always cover everything.
+      if (!geometry && !grouping) active = this.nodesInViewport(new Set(active));
+      const positions=new Float32Array(active.length*2), ids=new Map<number,number>();
+      active.forEach((n,i)=>{ids.set(n,i);positions[i*2]=this.positions[n*2];positions[i*2+1]=this.positions[n*2+1];});
+      const edges:{source:number;target:number}[]=[];
+      for(const c of slice.connectors) {
+        if(c.endpoints.length!==2) continue;
+        const a=ids.get(c.endpoints[0]),b=ids.get(c.endpoints[1]);
+        if(a!==undefined&&b!==undefined) edges.push({source:a,target:b});
+      }
+      let groupNames: string[] = [];
+      let density;
+      if (grouping) {
+        const index=new Map<string,number>();
+        const groupIds=active.map(n=>{
+          const v=this.index.nodes[n].attrs[grouping];
+          const key=v===undefined||v===null?"(none)":typeof v==="object"?JSON.stringify(v):String(v);
+          let g=index.get(key);if(g===undefined){g=index.size;index.set(key,g);}
+          return g;
+        });
+        density=aggregateGroups(positions,edges,groupIds);
+        groupNames=Array.from(index.keys());
+        density.membership.forEach((pt,i)=>{ if(this.densityGroupKeys[pt]===undefined) this.densityGroupKeys[pt]=groupNames[groupIds[i]]; });
+      } else density=aggregateDensity(positions,edges,geometry?SLICE_DENSITY_RESOLUTION:DENSITY_RESOLUTION);
+      const point=(x:number,y:number):[number,number]=>{
+        if (!geometry) return [x,y];
+        const [dx,dy]=geometry.offset(s);return [x*geometry.scale+dx,y*geometry.scale+dy];
+      };
+      // Pixel size of one grid cell, so neighbouring dots overlap into a continuous density map.
+      let spanWorld=1e-9;
+      if(!geometry&&!grouping&&active.length) {
+        let lx=Infinity,hx=-Infinity,ly=Infinity,hy=-Infinity;
+        for(let i=0;i<positions.length;i+=2){lx=Math.min(lx,positions[i]);hx=Math.max(hx,positions[i]);ly=Math.min(ly,positions[i+1]);hy=Math.max(hy,positions[i+1]);}
+        spanWorld=Math.max(hx-lx,hy-ly,1e-9);
+      }
+      const cellPx=spanWorld/DENSITY_RESOLUTION*this.camera.zoom*this.canvas.clientHeight/2;
+      const maxCount=density.points.reduce((m,p)=>Math.max(m,p.count),1);
+      const nodeOffset=nodeData.length/7, edgeOffset=edgeData.length/3;
+      // A cell shows its most common node colour, so planted groups stay identifiable in the overview.
+      const tallies=density.points.map(()=>new Map<number,number>());
+      active.forEach((n,i)=>{
+        const c=this.nodeColorValues, o=n*4;
+        const key=(Math.round(c[o]*255)<<24|Math.round(c[o+1]*255)<<16|Math.round(c[o+2]*255)<<8|Math.round(c[o+3]*255))>>>0;
+        const tally=tallies[density.membership[i]];tally.set(key,(tally.get(key)??0)+1);
+      });
+      density.points.forEach((p,i)=>{
+        let best=0,bestCount=-1;
+        for(const [key,count] of tallies[i]) if(count>bestCount){best=key;bestCount=count;}
+        const color=bestCount<0?[...this.opts.nodeColor]:[(best>>>24)/255,((best>>>16)&255)/255,((best>>>8)&255)/255,(best&255)/255];
+        const share=Math.sqrt(p.count/maxCount);
+        let size:number;
+        if(geometry) size=Math.min(12,3+Math.log2(p.count+1));
+        else if(grouping) { size=Math.min(56,12+9*Math.log10(p.count)); color[3]=.9; }
+        else { size=Math.min(40,Math.max(4,cellPx*(.9+.9*share))); color[3]=.35+.5*share; }
+        nodeData.push(...point(p.x,p.y),size,...color);
+        this.densityCounts.push(p.count);
+      });
+      // Show the heaviest links; opacity follows how many connectors each one stands for.
+      const limit=grouping?4000:geometry?250:1500;
+      const links=density.links.slice().sort((x,y)=>y[2]-x[2]);
+      const heaviest=links.length?links[0][2]:1;
+      this.densityLinksTotal+=links.length;
+      for(const [a,b,w] of links.slice(0,limit)) {
+        const alpha=Math.min(.8,.1+.7*Math.sqrt(w/heaviest));
+        edgeData.push(...point(density.points[a].x,density.points[a].y),alpha,...point(density.points[b].x,density.points[b].y),alpha);
+        this.densityLinksShown++;
+      }
+      this.densityRanges.push({nodes:{offset:nodeOffset,count:nodeData.length/7-nodeOffset},edges:{offset:edgeOffset,count:edgeData.length/3-edgeOffset}});
+    });
+    this.densityNodes=new Float32Array(nodeData);this.densityEdges=new Float32Array(edgeData);
+    this.densityNodeBuffer?.({data:this.densityNodes,usage:"dynamic"} as any);
+    this.densityEdgeBuffer?.({data:this.densityEdges,usage:"dynamic"} as any);
+    this.densityDirty=false;
+  }
+
+  private densityCaption(): string {
+    const total = (this.baseNodes()?.size ?? this.numNodes).toLocaleString();
+    const links = this.densityLinksTotal === 0 ? "no links between cells"
+      : this.densityLinksShown < this.densityLinksTotal ? `strongest ${this.densityLinksShown.toLocaleString()} of ${this.densityLinksTotal.toLocaleString()} links`
+      : `${this.densityLinksShown.toLocaleString()} links`;
+    if (this.groupBy !== null && this.stackAxis === null) return `Grouped by ${this.groupBy} · ${total} nodes · click a group to expand it · ${links}`;
+    return `Density overview · ${this.densityNodesInView.toLocaleString()} of ${total} nodes in view · click a cell or zoom in to see individual nodes · ${links}`;
+  }
+
+  /** Index of the aggregated point under a canvas-relative CSS pixel position (flat overview only), or -1. */
+  private densityPointAt(px: number, py: number): number {
+    if (!this.densityMode || this.stackAxis !== null) return -1;
+    const w=this.canvas.clientWidth,h=this.canvas.clientHeight;
+    let best=-1,bestDistance=Infinity;
+    for(let i=0;i<this.densityNodes.length;i+=7) {
+      const [x,y]=this.worldToScreen(this.densityNodes[i],this.densityNodes[i+1],w,h);
+      const d=Math.hypot(x-px,y-py);
+      if(d<=this.densityNodes[i+2]/2+3&&d<bestDistance){best=i/7;bestDistance=d;}
+    }
+    return best;
+  }
+
   /** Load a full graph snapshot: allocates the position/edge/id buffers. */
   loadGraph(msg: GraphMessage): void {
     this.setStackMode(null); // reset in case a renderer instance is reused across graphs
 
+    this.index = new GraphIndex(msg.nodes, msg.connectors);
+    this.focusedNodes = this.focusedConnectors = this.nodeFilterNodes = this.regionNodes = null;
+    this.groupBy = null;
+    this.selectedNode = null;
     this.numNodes = msg.nodes.length;
+    this.positions = new Float32Array(this.numNodes * 2);
+    this.evaluateLod();
+    this.nodeSizeBy = null;
+    this.nodeSizeBuffer?.({ data: new Float32Array(msg.nodes.length).fill(1), usage: "static" } as any);
+    this.updateNodeElements();
     this.positions = new Float32Array(this.numNodes * 2);
     this.positionBuffer?.({ data: this.positions, usage: "dynamic" } as any);
 
@@ -1035,8 +1627,11 @@ export class Renderer {
     this.allHyperedges = msg.connectors.filter((c) => c.endpoints.length > 2);
     // Temporal domain spans both kinds — a hyperedge can be just as
     // time-bounded as an ordinary connector.
-    this.timeDomain = computeTimeDomain(msg.connectors);
+    const domain = computeTimeDomain(msg.connectors);
+    this.timeDomain = domain && { ...domain, unit: msg.time_unit === "epoch_seconds" ? "epoch_seconds" : null };
     this.currentTimeFilter = null; // default: show everything, unfiltered
+    this.timeMode = "instant";
+    this.timeWindow = 0;
     this.onTimeDomain?.(this.timeDomain);
 
     this.layers = msg.layers;
@@ -1048,6 +1643,7 @@ export class Renderer {
 
     this.setEdgeSet(this.allConnectors);
     this.setHyperedgeSet(this.allHyperedges);
+    this.onGraphLoaded?.();
   }
 
   /** Resolve each node's fill color: nodeColorOverrides (by key) beats
@@ -1072,6 +1668,7 @@ export class Renderer {
       if (override) color = override;
       colors.set(color, i * 4);
     });
+    this.nodeColorValues = colors;
     this.nodeColorBuffer?.({ data: colors, usage: "static" } as any);
 
     this.onNodeColorLegend?.(
@@ -1133,6 +1730,7 @@ export class Renderer {
   /** Rebuild edge/arrow geometry from a given connector set — used for the
    * initial full load and for time/layer-filtered subsets. */
   private setEdgeSet(connectors: WireConnector[]): void {
+    this.dirty = this.densityDirty = true;
     this.visibleConnectorCount = connectors.length;
     this.useThinEdges = connectors.length > Renderer.THIN_EDGE_THRESHOLD;
 
@@ -1223,12 +1821,18 @@ export class Renderer {
    * list — shared by plain connectors and hyperedges, since both filter
    * the same way. */
   private filterConnectors(connectors: WireConnector[]): WireConnector[] {
-    let visible = connectors;
+    let visible = this.focusedConnectors ? connectors.filter(c => this.focusedConnectors!.has(c.id)) : connectors;
+    if (this.nodeFilterNodes) {
+      const keep = this.nodeFilterNodes;
+      visible = visible.filter(c => c.endpoints.every(n => keep.has(n)));
+    }
+    if (this.regionNodes) {
+      const inView = this.regionNodes;
+      visible = visible.filter(c => c.endpoints.every(n => inView.has(n)));
+    }
     if (this.currentTimeFilter !== null) {
-      const t = this.currentTimeFilter;
-      visible = visible.filter(
-        (c) => (c.t_start === null || c.t_start <= t) && (c.t_end === null || t <= c.t_end)
-      );
+      const t = this.currentTimeFilter, mode = this.timeMode, window = this.timeWindow;
+      visible = visible.filter((c) => connectorActiveAt(c, t, mode, window));
     }
     if (this.layerVisibility !== null) {
       const vis = this.layerVisibility;
@@ -1242,8 +1846,11 @@ export class Renderer {
    * every connector regardless of time (the default). No-op if the graph
    * has no temporal connectors. Composes with setLayerFilter. Applies to
    * both plain edges and hyperedges. */
-  setTimeFilter(t: number | null): void {
+  setTimeFilter(t: number | null, options: TimeFilterOptions = {}): void {
+    if (options.window !== undefined && (!Number.isFinite(options.window) || options.window < 0)) throw new RangeError("window must be a non-negative finite number");
     this.currentTimeFilter = t;
+    this.timeMode = options.mode ?? "instant";
+    this.timeWindow = options.window ?? 0;
     this.setEdgeSet(this.filterConnectors(this.allConnectors));
     this.setHyperedgeSet(this.filterConnectors(this.allHyperedges));
   }
@@ -1281,16 +1888,26 @@ export class Renderer {
    * threads. No-op (clears back to flat) if the graph has no layers for
    * axis="layer" or no temporal domain for axis="time". Replaces the
    * flat edges/colored-edges/hulls/arrows/nodes entirely while active —
-   * hyperedges and directed arrows aren't given stacked-mode geometry of
-   * their own yet. timeBuckets (default 6) only applies to axis="time".
+   * includes directed arrows and hyperedge hulls on their matching slices.
+   * timeBuckets (default 6) only applies to axis="time".
    */
-  setStackMode(axis: StackAxis, options?: { timeBuckets?: number }): void {
+  setStackMode(axis: StackAxis, options?: { timeBuckets?: number; timeSplit?: TimeSplit; layout?: SliceLayout }): void {
     if (axis === "layer" && !this.hasLayers) axis = null;
     if (axis === "time" && this.timeDomain === null) axis = null;
+    if (options?.timeBuckets !== undefined) {
+      if (!Number.isFinite(options.timeBuckets) || options.timeBuckets < 1) throw new RangeError("timeBuckets must be positive and finite");
+      this.stackTimeBuckets = Math.min(64, Math.floor(options.timeBuckets));
+    }
+    if (options?.timeSplit !== undefined) this.stackTimeSplit = options.timeSplit === "events" ? "events" : "time";
+    this.dirty = this.densityDirty = true;
+    this.setHovered(null);
     this.stackAxis = axis;
-    if (options?.timeBuckets) this.stackTimeBuckets = options.timeBuckets;
+    this.sliceLayout = options?.layout ?? "stack";
+
 
     if (axis === null) {
+      this.camera.x = this.camera.y = 0;
+      this.camera.zoom = 1;
       this.stackSlices = [];
       this.stackEdgeList = [];
       this.stackThreadList = [];
@@ -1301,6 +1918,18 @@ export class Renderer {
       return;
     }
     this.rebuildStackSlices();
+    const g = this.getSliceGeometry();
+    const points = this.stackSlices.flatMap((_, i) => {
+      const [x, y] = g.offset(i);
+      return [[g.bounds[0] + x, g.bounds[1] + y], [g.bounds[2] + x, g.bounds[3] + y]];
+    });
+    if (points.length) {
+      const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+      const left = Math.min(...xs), right = Math.max(...xs), bottom = Math.min(...ys), top = Math.max(...ys);
+      this.camera.x = (left + right) / 2; this.camera.y = (bottom + top) / 2;
+      this.camera.zoom = Math.min(1.4 / Math.max(top - bottom, 0.1),
+        1.4 * (this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1)) / Math.max(right - left, 0.1));
+    }
   }
 
   /** Recompute slice membership (which connectors are on which plane) —
@@ -1309,34 +1938,32 @@ export class Renderer {
    * connector is on). Also performs the first position build. */
   private rebuildStackSlices(): void {
     if (this.stackAxis === "layer") {
-      // Slice 0 is always the "no layer" base plane (the backbone), even
-      // if it ends up with no connectors — it anchors the bottom of the
-      // stack so every named layer has firm ground to sit above.
+      // Include an unassigned panel only when it contains connectors.
       const base: StackSlice = {
         label: "(no layer)",
         color: this.opts.edgeColor,
-        connectors: this.allConnectors.filter((c) => c.layer_id === null),
+        connectors: [...this.allConnectors, ...this.allHyperedges].filter(c => !this.focusedConnectors || this.focusedConnectors.has(c.id)).filter((c) => c.layer_id === null),
       };
       const named: StackSlice[] = this.layers.map((l) => ({
         label: String(l.key),
         color: layerColor(l.id, this.opts.edgeColor),
-        connectors: this.allConnectors.filter((c) => c.layer_id === l.id),
+        connectors: [...this.allConnectors, ...this.allHyperedges].filter(c => !this.focusedConnectors || this.focusedConnectors.has(c.id)).filter((c) => c.layer_id === l.id),
       }));
-      this.stackSlices = [base, ...named];
+      this.stackSlices = base.connectors.length ? [base, ...named] : named;
     } else if (this.stackAxis === "time") {
       const domain = this.timeDomain!;
-      const n = Math.max(1, this.stackTimeBuckets);
-      const width = (domain.max - domain.min) / n || 1;
+      const all = [...this.allConnectors, ...this.allHyperedges].filter(c => !this.focusedConnectors || this.focusedConnectors.has(c.id));
+      const edges = timeBucketEdges(all, domain, this.stackTimeBuckets, this.stackTimeSplit);
+      const n = edges.length - 1;
+      const span = domain.max - domain.min;
       this.stackSlices = Array.from({ length: n }, (_, i) => {
-        const bucketStart = domain.min + i * width;
-        const bucketEnd = domain.min + (i + 1) * width;
+        const bucketStart = edges[i], bucketEnd = edges[i + 1];
         return {
-          label: `t=[${bucketStart.toFixed(2)}, ${bucketEnd.toFixed(2)}]`,
+          label: domain.unit === "epoch_seconds"
+            ? `${formatTime(bucketStart, domain.unit, span)} → ${formatTime(bucketEnd, domain.unit, span)}`
+            : `t=[${bucketStart.toFixed(2)}, ${bucketEnd.toFixed(2)}]`,
           color: timeSliceColor(i, n),
-          connectors: this.allConnectors.filter(
-            (c) =>
-              (c.t_start === null || c.t_start <= bucketEnd) && (c.t_end === null || c.t_end >= bucketStart)
-          ),
+          connectors: all.filter((c) => bucketContains(c, bucketStart, bucketEnd, i === n - 1)),
         };
       });
     } else {
@@ -1344,7 +1971,8 @@ export class Renderer {
     }
 
     this.stackNodeSliceCount = this.stackSlices.length;
-    this.onStackChange?.(this.stackSlices.map((s) => ({ label: s.label, color: s.color })));
+    this.updateNodeElements();
+    this.onStackChange?.(this.stackSlices.map((s) => ({ label: s.label, color: s.color, count: s.connectors.length })));
 
     // Edge list + static color buffer + per-slice vertex ranges (for
     // drawStackedScene's interleaved per-slice draw calls).
@@ -1353,13 +1981,13 @@ export class Renderer {
     const colorFloats: number[] = [];
     this.stackSlices.forEach((slice, sliceIndex) => {
       const vertexOffset = this.stackEdgeList.length * 2;
-      for (const c of slice.connectors) {
+      for (const c of slice.connectors.filter(c => c.endpoints.length === 2)) {
         this.stackEdgeList.push({ sliceIndex, source: c.endpoints[0], target: c.endpoints[1] });
         colorFloats.push(...slice.color, ...slice.color);
       }
       this.stackSliceEdgeVertexRanges.push({
         offset: vertexOffset,
-        count: slice.connectors.length * 2,
+        count: this.stackEdgeList.length * 2 - vertexOffset,
       });
     });
     this.stackedEdgeColorBuffer?.({ data: new Float32Array(colorFloats), usage: "static" } as any);
@@ -1367,7 +1995,7 @@ export class Renderer {
     // Thread list: one segment per node per consecutive slice pair,
     // connecting its copy on slice i to slice i+1.
     this.stackThreadList = [];
-    for (let s = 0; s < this.stackSlices.length - 1; s++) {
+    for (let s = 0; !this.densityMode && this.sliceLayout === "stack" && s < this.stackSlices.length - 1; s++) {
       for (let nodeId = 0; nodeId < this.numNodes; nodeId++) {
         this.stackThreadList.push({ sliceIndex: s, nodeId });
       }
@@ -1386,15 +2014,18 @@ export class Renderer {
    * layout's own spread just blurs every plane into one smear instead of
    * reading as separated sheets (this is what the first version of this
    * feature looked like; scaling down is what actually fixes it). */
+  private getSliceGeometry() {
+    return sliceGeometry(this.positions, this.stackNodeSliceCount, this.sliceLayout,
+      this.opts.stackShearX, this.opts.stackShearY, this.opts.stackPlaneScale);
+  }
+
   private rebuildStackedPositions(): void {
     if (this.stackAxis === null) return;
-    const { stackShearX: shx, stackShearY: shy, stackPlaneScale: scale } = this.opts;
+    const geometry = this.getSliceGeometry();
+    const shiftedX = (n: number, s: number) => geometry.point(n, s)[0];
+    const shiftedY = (n: number, s: number) => geometry.point(n, s)[1];
 
-    const shiftedX = (nodeId: number, sliceIndex: number) =>
-      (this.positions[nodeId * 2] ?? 0) * scale + sliceIndex * shx;
-    const shiftedY = (nodeId: number, sliceIndex: number) =>
-      (this.positions[nodeId * 2 + 1] ?? 0) * scale + sliceIndex * shy;
-
+    if (!this.densityMode) {
     const nodeData = new Float32Array(this.stackNodeSliceCount * this.numNodes * 2);
     for (let s = 0; s < this.stackNodeSliceCount; s++) {
       for (let n = 0; n < this.numNodes; n++) {
@@ -1423,37 +2054,17 @@ export class Renderer {
     });
     this.stackThreadPositionBuffer?.({ data: threadData, usage: "dynamic" } as any);
 
+    }
     // Plane "index card" backing: one quad per slice, sized to the
     // (scaled) layout's bounding box + a margin, shifted by that slice's
     // shear offset. Every plane shares the same shape (just shifted),
     // since they all show the same scaled base layout.
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (let n = 0; n < this.numNodes; n++) {
-      const x = (this.positions[n * 2] ?? 0) * scale;
-      const y = (this.positions[n * 2 + 1] ?? 0) * scale;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-    }
-    if (!Number.isFinite(minX)) {
-      minX = minY = -0.1;
-      maxX = maxY = 0.1;
-    }
-    const margin = 0.06;
-    minX -= margin;
-    minY -= margin;
-    maxX += margin;
-    maxY += margin;
+    const [minX, minY, maxX, maxY] = geometry.bounds;
 
     const planeData = new Float32Array(this.stackNodeSliceCount * 6 * 6); // 2 tris * 3 verts * 6 floats
     const [pr, pg, pb, pa] = this.opts.stackPlaneColor;
     for (let s = 0; s < this.stackNodeSliceCount; s++) {
-      const dx = s * shx;
-      const dy = s * shy;
+      const [dx, dy] = geometry.offset(s);
       const corners = [
         [minX + dx, minY + dy],
         [maxX + dx, minY + dy],
@@ -1472,12 +2083,36 @@ export class Renderer {
         planeData[o + 5] = pa;
       }
     }
+    const triangles: number[] = [];
+    this.sliceTriangleRanges = [];
+    this.slicePolygons = this.stackSlices.map((slice, index) => {
+      const polygons: typeof this.slicePolygons[number] = [];
+      const point = (id: number) => { const [x, y] = geometry.point(id, index); return {x, y}; };
+      for (const c of this.densityMode ? [] : slice.connectors) {
+        if (c.endpoints.length > 2) polygons.push({kind: "hull",
+          points: memberHull(c.endpoints.map(point), Math.max(0.008, this.opts.hullPadding * geometry.scale)),
+          color: hyperedgeFillColor(c.id, c.layer_id)});
+        else if (c.directed) polygons.push({kind: "arrow",
+          points: arrowPolygon(point(c.endpoints[0]), point(c.endpoints[1]),
+            this.opts.arrowLength, this.opts.arrowWidth, this.opts.arrowT), color: this.opts.arrowColor});
+      }
+      polygons.sort((a, b) => (a.kind === "hull" ? 0 : 1) - (b.kind === "hull" ? 0 : 1));
+      const offset = triangles.length / 6;
+      for (const polygon of polygons) {
+        const vertices = triangulateFan(polygon.points);
+        for (let i = 0; i < vertices.length; i += 2) triangles.push(vertices[i], vertices[i + 1], ...polygon.color);
+      }
+      this.sliceTriangleRanges.push({offset, count: triangles.length / 6 - offset});
+      return polygons;
+    });
+    this.sliceTriangleBuffer?.({data: new Float32Array(triangles), usage: "dynamic"} as any);
     this.stackPlaneVertexCount = this.stackNodeSliceCount * 6;
     this.stackPlaneBuffer?.({ data: planeData, usage: "dynamic" } as any);
   }
 
   /** Set the visible hyperedge subset and rebuild their hull geometry. */
   private setHyperedgeSet(hyperedges: WireConnector[]): void {
+    this.dirty = this.densityDirty = true;
     this.visibleHyperedgeCount = hyperedges.length;
     this.visibleHyperedges = hyperedges;
     this.rebuildHyperedgeGeometry();
@@ -1530,6 +2165,8 @@ export class Renderer {
 
   /** Apply a streamed layout update: re-upload positions to the GPU. */
   applyLayoutStep(msg: LayoutStepMessage): void {
+    this.dirty = this.densityDirty = true;
+    this.markLodStale();
     this.positions = decodePositions(msg);
     this.positionBuffer?.subdata(this.positions);
     this.rebuildArrowSrcDst();
@@ -1542,29 +2179,26 @@ export class Renderer {
   }
 
   private loop = (): void => {
-    this.resizePickFboIfNeeded();
-    this.regl.clear({ color: this.opts.backgroundColor, depth: 1 });
-    if (this.stackAxis !== null) {
-      // Stacked-slices view replaces the flat view entirely — see
-      // setStackMode. Threads drawn first (back-most, a faint spine
-      // running through the whole stack), then each plane's backing/
-      // edges/nodes interleaved back-to-front (see drawStackedScene) so
-      // each plane visually occludes the one behind it.
-      this.drawStackThreads();
-      this.drawStackedScene();
-    } else {
-      // Hulls draw first (and behind) so edges/nodes remain fully legible
-      // on top of the translucent grouping fill.
-      this.drawHyperedges();
-      this.drawEdges();
-      this.drawArrows();
-      this.drawNodes();
-      this.updateHover();
-      // Not drawn in stacked mode yet (its per-plane, per-copy positions
-      // would need their own label placement logic — a reasonable future
-      // extension, not done now).
+    const camera = `${this.camera.x},${this.camera.y},${this.camera.zoom},${this.canvas.width},${this.canvas.height}`;
+    if (camera !== this.lastCamera) { this.lastCamera = camera; this.dirty = this.pointerDirty = true; this.markLodStale(); }
+    if (this.lodPending && performance.now() - this.lodChangedAt > 160) this.applyLod();
+    if (this.dirty) {
+      this.resizePickFboIfNeeded();
+      if (this.densityMode && this.densityDirty) this.rebuildDensity();
+      this.regl.clear({color:this.opts.backgroundColor,depth:1});
+      if (this.stackAxis !== null) {
+        if (!this.densityMode) this.drawStackThreads();
+        this.drawStackedScene();
+      } else if (this.densityMode) this.drawDensity(0);
+      else { this.drawHyperedges(); this.drawEdges(); this.drawArrows(); this.drawNodes(); }
+    }
+    if (this.pointerDirty || this.dirty) {
+      if (this.densityMode) this.setHovered(null);
+      else if (this.stackAxis !== null) this.updateSliceHover();
+      else this.updateHover();
       this.drawLabels();
     }
+    this.dirty = this.pointerDirty = false;
     this.rafHandle = requestAnimationFrame(this.loop);
   };
 
@@ -1592,17 +2226,70 @@ export class Renderer {
       this.labelCanvas.width = pixelW;
       this.labelCanvas.height = pixelH;
     }
+    const rect = this.canvas.getBoundingClientRect();
+    Object.assign(this.labelCanvas.style, {left:`${rect.left}px`,top:`${rect.top}px`,width:`${w}px`,height:`${h}px`});
     const ctx = this.labelCtx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.font = "11px system-ui, sans-serif";
     ctx.fillStyle = "rgba(30, 30, 30, 0.9)";
     ctx.textBaseline = "middle";
-    for (let n = 0; n < this.numNodes; n++) {
-      const text = this.nodeLabelText[n];
+    if (this.densityMode) {
+      ctx.fillText(this.densityCaption(), 24, 20); // top edge: the timeline bar covers the bottom
+      if (this.pointerPx) {
+        const hit = this.densityPointAt(this.pointerPx.x / dpr, this.pointerPx.y / dpr);
+        if (hit >= 0) {
+          const key = this.densityGroupKeys[hit];
+          const text = `${key !== undefined ? `${this.groupBy}: ${key} · ` : ""}${this.densityCounts[hit].toLocaleString()} node${this.densityCounts[hit] === 1 ? "" : "s"}${key !== undefined ? " · click to expand" : " · click to zoom in"}`;
+          const px = this.pointerPx.x / dpr + 14, py = this.pointerPx.y / dpr - 14;
+          ctx.font = "600 11px system-ui, sans-serif";
+          const tw = ctx.measureText(text).width;
+          ctx.fillStyle = "rgba(255,255,255,0.95)"; ctx.fillRect(px - 6, py - 10, tw + 12, 20);
+          ctx.strokeStyle = "#dce3ea"; ctx.lineWidth = 1; ctx.strokeRect(px - 6, py - 10, tw + 12, 20);
+          ctx.fillStyle = "rgba(24, 62, 81, 0.95)"; ctx.fillText(text, px, py);
+          ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = "rgba(30, 30, 30, 0.9)";
+        }
+      }
+    } else if (this.regionNodes) {
+      ctx.fillText(`Zoomed detail · ${this.visibleNodeIds.length.toLocaleString()} of ${(this.baseNodes()?.size ?? this.numNodes).toLocaleString()} nodes in view · zoom out for the overview`, 24, 20);
+    }
+    if (this.stackAxis !== null) {
+      const g = this.getSliceGeometry();
+      ctx.font = "600 12px system-ui, sans-serif";
+      this.stackSlices.forEach((slice, i) => {
+        const [dx, dy] = g.offset(i);
+        const [x, y] = this.worldToScreen(g.bounds[0] + dx, g.bounds[3] + dy, w, h);
+        const heading = panelHeadingLines(i, slice.label);
+        heading.forEach((line, k) => ctx.fillText(line, x, y - 18 - (heading.length - 1 - k) * 14));
+        for (const n of this.densityMode ? [] : this.visibleNodeIds) {
+          if (this.focusedNodes && !this.focusedNodes.has(n)) continue;
+          const hovered = n === this.hoveredNodeId || n === this.selectedNode;
+          const text = this.nodeLabelText[n] ?? (hovered ? this.nodeKeys[n] : null);
+          if (!text && !hovered) continue;
+          const [nx, ny] = this.worldToScreen(...g.point(n, i), w, h);
+          if (hovered) {
+            ctx.strokeStyle = "#183e51"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(nx, ny, this.opts.nodeRadiusPx + 3, 0, Math.PI * 2); ctx.stroke();
+          }
+          if (text) ctx.fillText(text, nx + this.opts.nodeRadiusPx + 6, ny);
+        }
+      });
+      return;
+    }
+    if (this.densityMode) return;
+    for (const n of this.visibleNodeIds) {
+      const text = this.nodeLabelText[n] ?? ((n === this.selectedNode || n === this.hoveredNodeId) ? this.nodeKeys[n] : null);
       if (!text) continue;
       const [x, y] = this.worldToScreen(this.positions[n * 2] ?? 0, this.positions[n * 2 + 1] ?? 0, w, h);
       ctx.fillText(text, x + this.opts.nodeRadiusPx + 3, y);
+    }
+    ctx.strokeStyle = "#183e51"; ctx.lineWidth = 2; ctx.fillStyle = "rgba(24, 62, 81, 0.95)";
+    const shown = this.viewNodes();
+    for (const n of this.highlighted) {
+      if (shown && !shown.has(n)) continue;
+      const [x, y] = this.worldToScreen(this.positions[n * 2] ?? 0, this.positions[n * 2 + 1] ?? 0, w, h);
+      ctx.beginPath(); ctx.arc(x, y, this.opts.nodeRadiusPx + 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillText(this.nodeKeys[n], x + this.opts.nodeRadiusPx + 8, y - 8);
     }
   }
 
@@ -1637,12 +2324,34 @@ export class Renderer {
       `<rect x="0" y="0" width="${w}" height="${h}" fill="${rgba(this.opts.backgroundColor)}" />`,
     ];
 
+    if (this.densityMode) {
+      if (this.densityDirty) this.rebuildDensity();
+      for(let i=0;i<this.densityEdges.length;i+=6) {
+        const [x1,y1]=toScreen(this.densityEdges[i],this.densityEdges[i+1]);
+        const [x2,y2]=toScreen(this.densityEdges[i+3],this.densityEdges[i+4]);
+        parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#6b8094" stroke-opacity="${this.densityEdges[i+2].toFixed(2)}"/>`);
+      }
+      for(let i=0;i<this.densityNodes.length;i+=7) {
+        const [x,y]=toScreen(this.densityNodes[i],this.densityNodes[i+1]);
+        parts.push(`<circle cx="${x}" cy="${y}" r="${this.densityNodes[i+2]/2}" fill="${rgba([this.densityNodes[i+3],this.densityNodes[i+4],this.densityNodes[i+5],this.densityNodes[i+6]])}"/>`);
+      }
+      if(this.stackAxis !== null) {
+        const g=this.getSliceGeometry();
+        this.stackSlices.forEach((slice,i)=>{
+          const [dx,dy]=g.offset(i), [x,y]=toScreen(g.bounds[0]+dx,g.bounds[3]+dy);
+          const lines=panelHeadingLines(i,slice.label);
+          lines.forEach((line,k)=>parts.push(`<text x="${x}" y="${y-18-(lines.length-1-k)*14}" font-size="12">${line.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]!))}</text>`));
+        });
+      }
+      parts.push(`<text x="24" y="${h-24}" font-size="12">${this.densityCaption().replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]!))}</text></svg>`);
+      return parts.join("\n");
+    }
     if (this.stackAxis !== null) {
       // Stacked-slices view: mirror rebuildStackedPositions' math and
       // drawStackedScene's back-to-front per-slice draw order.
-      const { stackShearX: shx, stackShearY: shy, stackPlaneScale: scale } = this.opts;
-      const sx = (n: number, s: number) => (this.positions[n * 2] ?? 0) * scale + s * shx;
-      const sy = (n: number, s: number) => (this.positions[n * 2 + 1] ?? 0) * scale + s * shy;
+      const geometry = this.getSliceGeometry();
+      const sx = (n: number, s: number) => geometry.point(n, s)[0];
+      const sy = (n: number, s: number) => geometry.point(n, s)[1];
 
       parts.push(`<g stroke="rgba(102,102,115,${this.opts.stackThreadAlpha})" stroke-width="1">`);
       for (const t of this.stackThreadList) {
@@ -1652,31 +2361,10 @@ export class Renderer {
       }
       parts.push(`</g>`);
 
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      for (let n = 0; n < this.numNodes; n++) {
-        const x = (this.positions[n * 2] ?? 0) * scale;
-        const y = (this.positions[n * 2 + 1] ?? 0) * scale;
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
-      }
-      if (!Number.isFinite(minX)) {
-        minX = minY = -0.1;
-        maxX = maxY = 0.1;
-      }
-      const margin = 0.06;
-      minX -= margin;
-      minY -= margin;
-      maxX += margin;
-      maxY += margin;
+      const [minX, minY, maxX, maxY] = geometry.bounds;
 
       for (let s = 0; s < this.stackNodeSliceCount; s++) {
-        const dx = s * shx;
-        const dy = s * shy;
+        const [dx, dy] = geometry.offset(s);
         const corners: [number, number][] = [
           toScreen(minX + dx, minY + dy),
           toScreen(maxX + dx, minY + dy),
@@ -1685,6 +2373,15 @@ export class Renderer {
         ];
         parts.push(`<polygon points="${pointsAttr(corners)}" fill="${rgba(this.opts.stackPlaneColor)}" />`);
 
+        for (const polygon of this.slicePolygons[s] ?? []) {
+          parts.push(`<polygon data-kind="${polygon.kind}" points="${pointsAttr(polygon.points.map(p => toScreen(p.x, p.y)))}" fill="${rgba(polygon.color)}" />`);
+        }
+        const [labelX, labelY] = toScreen(minX + dx, maxY + dy);
+        const headingLines = panelHeadingLines(s, this.stackSlices[s].label);
+        headingLines.forEach((line, k) => {
+          const escaped = line.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[c]!));
+          parts.push(`<text x="${labelX}" y="${labelY - 18 - (headingLines.length - 1 - k) * 14}" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="#26384d">${escaped}</text>`);
+        });
         const range = this.stackSliceEdgeVertexRanges[s];
         if (range) {
           const startEdge = range.offset / 2;
@@ -1700,8 +2397,13 @@ export class Renderer {
           }
         }
 
-        for (let n = 0; n < this.numNodes; n++) {
+        for (const n of this.visibleNodeIds) {
           const [x, y] = toScreen(sx(n, s), sy(n, s));
+          const text = this.nodeLabelText[n] ?? (n === this.selectedNode ? this.nodeKeys[n] : null);
+          if(text) {
+            const escaped=text.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]!));
+            parts.push(`<text x="${x+this.opts.nodeRadiusPx+6}" y="${y}" font-size="12">${escaped}</text>`);
+          }
           parts.push(
             `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${this.opts.nodeRadiusPx * 0.8}" fill="${rgba([this.opts.nodeColor[0], this.opts.nodeColor[1], this.opts.nodeColor[2], 0.9])}" />`
           );
@@ -1771,7 +2473,7 @@ export class Renderer {
         parts.push(`<polygon points="${pointsAttr(pts)}" fill="${rgba(this.opts.arrowColor)}" />`);
       }
 
-      for (let n = 0; n < this.numNodes; n++) {
+      for (const n of this.visibleNodeIds) {
         const [x, y] = toScreen(this.positions[n * 2] ?? 0, this.positions[n * 2 + 1] ?? 0);
         parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${this.opts.nodeRadiusPx}" fill="${rgba(this.opts.nodeColor)}" />`);
       }
@@ -1785,6 +2487,8 @@ export class Renderer {
     if (this.rafHandle !== null) cancelAnimationFrame(this.rafHandle);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
+    this.canvas.removeEventListener("pointerdown", this.onPointerDown);
+    this.canvas.removeEventListener("pointerup", this.onPointerUp);
     this.labelCanvas?.remove();
     this.camera.dispose();
     this.regl.destroy();

@@ -1,0 +1,460 @@
+[
+  {
+    "dataset": "karate",
+    "controls": {
+      "buttons": [
+        "Overview",
+        "Layer atlas",
+        "Time ribbon",
+        "Fit view",
+        "Show all nodes",
+        "Export ▾",
+        "PNG image",
+        "JPG image",
+        "SVG vector",
+        "HTML page",
+        "PDF document",
+        "All time",
+        "Zoom out",
+        "Zoom in",
+        "Reset filter",
+        "Find path",
+        "Show neighbourhood",
+        "Clear selection"
+      ],
+      "inputs": [
+        "search:Search by key…",
+        "select-one:Time selection",
+        "number:Window length",
+        "range:timeline-slider",
+        "select-one:Color by",
+        "select-one:Size by",
+        "select-one:Group by",
+        "select-one:Filter attribute",
+        "number:Minimum degree"
+      ],
+      "methods": [
+        "dispose",
+        "exportSVG",
+        "fitView",
+        "focusNeighborhood",
+        "focusPath",
+        "getLodState",
+        "getNodeAttributes",
+        "getNodeKey",
+        "getNodeScreenPosition",
+        "getVisibleEdgeCount",
+        "getVisibleHyperedgeCount",
+        "getVisibleNodeCount",
+        "inspectNode",
+        "searchNodes",
+        "setGroupBy",
+        "setHighlightedNodes",
+        "setLayerFilter",
+        "setNodeColorBy",
+        "setNodeFilter",
+        "setNodeSizeBy",
+        "setStackMode",
+        "setTimeFilter",
+        "zoomBy"
+      ],
+      "caption": null
+    },
+    "pixels": {
+      "translucentPixels": 0,
+      "invalidPremultipliedPixels": 0,
+      "inkPixels": 15335,
+      "totalPixels": 799000
+    },
+    "visibleEdges": 78,
+    "nodes": 34,
+    "lod": {
+      "initial": {
+        "mode": "detail",
+        "nodesInView": 34,
+        "nodesDrawn": 34
+      }
+    },
+    "focusInfo": {
+      "node": {
+        "id": 1,
+        "key": 1,
+        "attrs": {
+          "label": 0
+        }
+      },
+      "neighbors": 9,
+      "connectors": 9
+    },
+    "focusVisibleEdges": 9,
+    "errors": [],
+    "status": "ok"
+  },
+  {
+    "dataset": "sbm1000",
+    "controls": {
+      "buttons": [
+        "Overview",
+        "Layer atlas",
+        "Time ribbon",
+        "Fit view",
+        "Show all nodes",
+        "Export ▾",
+        "PNG image",
+        "JPG image",
+        "SVG vector",
+        "HTML page",
+        "PDF document",
+        "All time",
+        "Zoom out",
+        "Zoom in",
+        "Reset filter",
+        "Find path",
+        "Show neighbourhood",
+        "Clear selection"
+      ],
+      "inputs": [
+        "search:Search by key…",
+        "select-one:Time selection",
+        "number:Window length",
+        "range:timeline-slider",
+        "select-one:Color by",
+        "select-one:Size by",
+        "select-one:Group by",
+        "select-one:Filter attribute",
+        "number:Minimum degree"
+      ],
+      "methods": [
+        "dispose",
+        "exportSVG",
+        "fitView",
+        "focusNeighborhood",
+        "focusPath",
+        "getLodState",
+        "getNodeAttributes",
+        "getNodeKey",
+        "getNodeScreenPosition",
+        "getVisibleEdgeCount",
+        "getVisibleHyperedgeCount",
+        "getVisibleNodeCount",
+        "inspectNode",
+        "searchNodes",
+        "setGroupBy",
+        "setHighlightedNodes",
+        "setLayerFilter",
+        "setNodeColorBy",
+        "setNodeFilter",
+        "setNodeSizeBy",
+        "setStackMode",
+        "setTimeFilter",
+        "zoomBy"
+      ],
+      "caption": null
+    },
+    "pixels": {
+      "translucentPixels": 0,
+      "invalidPremultipliedPixels": 0,
+      "inkPixels": 166644,
+      "totalPixels": 799000
+    },
+    "visibleEdges": 4888,
+    "nodes": 1000,
+    "lod": {
+      "initial": {
+        "mode": "detail",
+        "nodesInView": 1000,
+        "nodesDrawn": 1000
+      }
+    },
+    "focusInfo": {
+      "node": {
+        "id": 1,
+        "key": 1,
+        "attrs": {
+          "label": 0
+        }
+      },
+      "neighbors": 8,
+      "connectors": 8
+    },
+    "focusVisibleEdges": 8,
+    "errors": [],
+    "status": "ok"
+  },
+  {
+    "dataset": "sbm5000",
+    "controls": {
+      "buttons": [
+        "Overview",
+        "Layer atlas",
+        "Time ribbon",
+        "Fit view",
+        "Show all nodes",
+        "Export ▾",
+        "PNG image",
+        "JPG image",
+        "SVG vector",
+        "HTML page",
+        "PDF document",
+        "All time",
+        "Zoom out",
+        "Zoom in",
+        "Reset filter",
+        "Find path",
+        "Show neighbourhood",
+        "Clear selection"
+      ],
+      "inputs": [
+        "search:Search by key…",
+        "select-one:Time selection",
+        "number:Window length",
+        "range:timeline-slider",
+        "select-one:Color by",
+        "select-one:Size by",
+        "select-one:Group by",
+        "select-one:Filter attribute",
+        "number:Minimum degree"
+      ],
+      "methods": [
+        "dispose",
+        "exportSVG",
+        "fitView",
+        "focusNeighborhood",
+        "focusPath",
+        "getLodState",
+        "getNodeAttributes",
+        "getNodeKey",
+        "getNodeScreenPosition",
+        "getVisibleEdgeCount",
+        "getVisibleHyperedgeCount",
+        "getVisibleNodeCount",
+        "inspectNode",
+        "searchNodes",
+        "setGroupBy",
+        "setHighlightedNodes",
+        "setLayerFilter",
+        "setNodeColorBy",
+        "setNodeFilter",
+        "setNodeSizeBy",
+        "setStackMode",
+        "setTimeFilter",
+        "zoomBy"
+      ],
+      "caption": null
+    },
+    "pixels": {
+      "translucentPixels": 0,
+      "invalidPremultipliedPixels": 0,
+      "inkPixels": 138983,
+      "totalPixels": 799000
+    },
+    "visibleEdges": 24896,
+    "nodes": 5000,
+    "lod": {
+      "initial": {
+        "mode": "detail",
+        "nodesInView": 5000,
+        "nodesDrawn": 5000
+      }
+    },
+    "focusInfo": {
+      "node": {
+        "id": 1,
+        "key": 1,
+        "attrs": {
+          "label": 0
+        }
+      },
+      "neighbors": 19,
+      "connectors": 19
+    },
+    "focusVisibleEdges": 19,
+    "errors": [],
+    "status": "ok"
+  },
+  {
+    "dataset": "facebook",
+    "controls": {
+      "buttons": [
+        "Overview",
+        "Layer atlas",
+        "Time ribbon",
+        "Fit view",
+        "Show all nodes",
+        "Export ▾",
+        "PNG image",
+        "JPG image",
+        "SVG vector",
+        "HTML page",
+        "PDF document",
+        "All time",
+        "Zoom out",
+        "Zoom in",
+        "Reset filter",
+        "Find path",
+        "Show neighbourhood",
+        "Clear selection"
+      ],
+      "inputs": [
+        "search:Search by key…",
+        "select-one:Time selection",
+        "number:Window length",
+        "range:timeline-slider",
+        "select-one:Color by",
+        "select-one:Size by",
+        "select-one:Group by",
+        "select-one:Filter attribute",
+        "number:Minimum degree"
+      ],
+      "methods": [
+        "dispose",
+        "exportSVG",
+        "fitView",
+        "focusNeighborhood",
+        "focusPath",
+        "getLodState",
+        "getNodeAttributes",
+        "getNodeKey",
+        "getNodeScreenPosition",
+        "getVisibleEdgeCount",
+        "getVisibleHyperedgeCount",
+        "getVisibleNodeCount",
+        "inspectNode",
+        "searchNodes",
+        "setGroupBy",
+        "setHighlightedNodes",
+        "setLayerFilter",
+        "setNodeColorBy",
+        "setNodeFilter",
+        "setNodeSizeBy",
+        "setStackMode",
+        "setTimeFilter",
+        "zoomBy"
+      ],
+      "caption": null
+    },
+    "pixels": {
+      "translucentPixels": 0,
+      "invalidPremultipliedPixels": 0,
+      "inkPixels": 43280,
+      "totalPixels": 799000
+    },
+    "visibleEdges": 88234,
+    "nodes": 4039,
+    "lod": {
+      "initial": {
+        "mode": "detail",
+        "nodesInView": 4039,
+        "nodesDrawn": 4039
+      }
+    },
+    "focusInfo": {
+      "node": {
+        "id": 1,
+        "key": 1,
+        "attrs": {}
+      },
+      "neighbors": 17,
+      "connectors": 17
+    },
+    "focusVisibleEdges": 17,
+    "errors": [],
+    "status": "ok"
+  },
+  {
+    "dataset": "sbm20000",
+    "controls": {
+      "buttons": [
+        "Overview",
+        "Layer atlas",
+        "Time ribbon",
+        "Fit view",
+        "Show all nodes",
+        "Export ▾",
+        "PNG image",
+        "JPG image",
+        "SVG vector",
+        "HTML page",
+        "PDF document",
+        "All time",
+        "Zoom out",
+        "Zoom in",
+        "Reset filter",
+        "Find path",
+        "Show neighbourhood",
+        "Clear selection"
+      ],
+      "inputs": [
+        "search:Search by key…",
+        "select-one:Time selection",
+        "number:Window length",
+        "range:timeline-slider",
+        "select-one:Color by",
+        "select-one:Size by",
+        "select-one:Group by",
+        "select-one:Filter attribute",
+        "number:Minimum degree"
+      ],
+      "methods": [
+        "dispose",
+        "exportSVG",
+        "fitView",
+        "focusNeighborhood",
+        "focusPath",
+        "getLodState",
+        "getNodeAttributes",
+        "getNodeKey",
+        "getNodeScreenPosition",
+        "getVisibleEdgeCount",
+        "getVisibleHyperedgeCount",
+        "getVisibleNodeCount",
+        "inspectNode",
+        "searchNodes",
+        "setGroupBy",
+        "setHighlightedNodes",
+        "setLayerFilter",
+        "setNodeColorBy",
+        "setNodeFilter",
+        "setNodeSizeBy",
+        "setStackMode",
+        "setTimeFilter",
+        "zoomBy"
+      ],
+      "caption": null
+    },
+    "pixels": {
+      "translucentPixels": 0,
+      "invalidPremultipliedPixels": 0,
+      "inkPixels": 121327,
+      "totalPixels": 799000
+    },
+    "visibleEdges": 99876,
+    "nodes": 20000,
+    "lod": {
+      "initial": {
+        "mode": "overview",
+        "nodesInView": 20000,
+        "nodesDrawn": 913
+      },
+      "zoomed": {
+        "mode": "region",
+        "nodesInView": 81,
+        "nodesDrawn": 81
+      }
+    },
+    "focusInfo": {
+      "node": {
+        "id": 1,
+        "key": 1,
+        "attrs": {
+          "label": 0
+        }
+      },
+      "neighbors": 9,
+      "connectors": 9
+    },
+    "focusVisibleEdges": 9,
+    "errors": [],
+    "status": "ok"
+  }
+]

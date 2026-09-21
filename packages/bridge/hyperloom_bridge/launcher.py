@@ -20,10 +20,10 @@ import logging
 import threading
 import urllib.parse
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from hyperloom_bridge.color import parse_color
 from hyperloom_bridge.server import BridgeServer
@@ -198,6 +198,18 @@ class ShowHandle:
     ws_port: int
     http_port: int | None
     thread: threading.Thread
+    _stop: Callable[[], None] = field(repr=False)
+    url: str | None = None
+
+    def close(self) -> None:
+        """Stop HTTP/WebSocket servers and release the session (idempotent)."""
+        self._stop()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
 
 
 def show(
@@ -328,6 +340,7 @@ def show(
 
     ready = threading.Event()
     bound_ws_port: list[int] = []
+    stop_bridge: list[Callable[[], None]] = []
 
     def _run_bridge_loop() -> None:
         loop = asyncio.new_event_loop()
@@ -342,11 +355,17 @@ def show(
                 seed=seed,
             )
             port = await server.start()
+            stop_bridge.append(lambda: loop.call_soon_threadsafe(server.close))
             bound_ws_port.append(port)
             ready.set()
             await server.wait_closed()
 
-        loop.run_until_complete(_main())
+        try:
+            loop.run_until_complete(_main())
+        finally:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.run_until_complete(loop.shutdown_default_executor())
+            loop.close()
 
     bridge_thread = threading.Thread(target=_run_bridge_loop, daemon=True)
     bridge_thread.start()
@@ -369,6 +388,7 @@ def show(
         httpd = _serve_static(app_dir, host, http_port)
         actual_http_port = httpd.server_address[1]
 
+    url = None
     if actual_http_port is not None:
         url = _viewer_url(host, actual_http_port, actual_ws_port, style)
         if in_jupyter:
@@ -382,12 +402,25 @@ def show(
             "bridge ready at ws://%s:%d (no frontend to open)", host, actual_ws_port
         )
 
-    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread)
+    stopped = threading.Event()
+    def stop() -> None:
+        if stopped.is_set():
+            return
+        stopped.set()
+        if bridge_thread.is_alive() and stop_bridge:
+            stop_bridge[0]()
+        if httpd is not None:
+            httpd.shutdown()
+            httpd.server_close()
+        if threading.current_thread() is not bridge_thread:
+            bridge_thread.join(timeout=10)
+
+    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop, url=url)
 
     if block:
         try:
             bridge_thread.join()
         except KeyboardInterrupt:
-            pass
+            handle.close()
 
     return handle if return_handle else None

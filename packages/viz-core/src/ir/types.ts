@@ -35,6 +35,8 @@ export interface GraphMessage {
   type: "graph";
   schema_version: number;
   wire_version: number;
+  /** "epoch_seconds" when connector times are Unix seconds (calendar times), else absent/null for plain numbers. */
+  time_unit?: string | null;
   nodes: WireNode[];
   layers: WireLayer[];
   connectors: WireConnector[];

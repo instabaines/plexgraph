@@ -29,12 +29,13 @@ class Session:
 
     async def stream_to(self, send: Sender) -> None:
         await send(encode_graph(self.graph))
-        for step in force_directed_layout(
+        steps = force_directed_layout(
             self.graph, iterations=self.layout_iterations, seed=self.seed
-        ):
+        )
+        while True:
+            # Advance one step at a time off the event-loop thread. Awaiting
+            # send preserves backpressure; no unbounded producer queue.
+            step = await asyncio.to_thread(next, steps, None)
+            if step is None:
+                break
             await send(encode_layout_step(step))
-            # Yield control between iterations so the event loop can still
-            # service incoming control-plane messages (hover/selection,
-            # once implemented) and so a slow/disconnected client applies
-            # backpressure instead of the layout running unboundedly ahead.
-            await asyncio.sleep(0)

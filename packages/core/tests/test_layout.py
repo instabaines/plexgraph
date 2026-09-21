@@ -51,7 +51,7 @@ def test_layout_handles_hyperedges_without_raising():
 
 
 def test_hyperedge_members_are_pulled_together():
-    # Without clique-expansion attraction, hyperedge members would be
+    # Without hyperedge attraction, hyperedge members would be
     # pulled by nothing at all and stay at their random initial spread.
     # With it, they should end up measurably closer together than nodes
     # with no connections at all.
@@ -76,3 +76,62 @@ def test_hyperedge_members_are_pulled_together():
     hyperedge_spread = mean_pairwise_dist([0, 1, 2, 3])
     isolated_spread = mean_pairwise_dist([4, 5, 6, 7])
     assert hyperedge_spread < isolated_spread
+
+
+def test_path_is_ordered_without_crossings():
+    final = list(force_directed_layout(_path_graph(120), seed=0))[-1]
+    assert final.converged
+    assert np.all(np.diff(final.positions[:, 0]) > 0)
+    np.testing.assert_allclose(final.positions[:, 1], 0)
+
+
+def test_disconnected_components_have_disjoint_bounds():
+    g = Graph()
+    for i in range(40):
+        g.add_node(i)
+    for start in (0, 10, 20, 30):
+        for i in range(start + 1, start + 10):
+            g.add_edge(start, i)
+    p = list(force_directed_layout(g, iterations=40, seed=0))[-1].positions
+    boxes = [(p[i:i + 10].min(axis=0), p[i:i + 10].max(axis=0)) for i in (0, 10, 20, 30)]
+    for a, (low, high) in enumerate(boxes):
+        for other_low, other_high in boxes[a + 1:]:
+            assert np.any(high < other_low) or np.any(other_high < low)
+
+
+def test_cooling_does_not_report_false_convergence():
+    g = Graph()
+    for i in range(15):
+        g.add_node(i)
+    for i in range(1, 15):
+        g.add_edge(0, i)
+    steps = list(force_directed_layout(g, iterations=30, seed=0, convergence_threshold=0))
+    assert len(steps) == 30
+    assert not steps[-1].converged
+
+
+def test_exact_repulsion_matches_dense_reference():
+    from hyperloom_core.algorithms.layout import _repulsion
+    p = np.random.default_rng(0).normal(size=(300, 2))
+    delta = p[:, None, :] - p[None, :, :]
+    d2 = np.maximum(np.sum(delta * delta, axis=2), (.1 * .05) ** 2)
+    expected = np.sum(delta * (.01 / d2)[..., None], axis=1)
+    np.testing.assert_allclose(_repulsion(p, .1, True), expected)
+
+
+def test_mesh_repulsion_remains_active_and_finite():
+    from hyperloom_core.algorithms.layout import _repulsion
+    p = np.random.default_rng(4).uniform(-1, 1, (6000, 2))
+    f = _repulsion(p, .01, False)
+    assert np.isfinite(f).all()
+    assert np.mean(np.sum(p * f, axis=1)) > 0  # outward pressure, not zero forces
+    np.testing.assert_array_equal(f, _repulsion(p, .01, False))
+
+
+def test_invalid_layout_parameters_raise():
+    import pytest
+    for kwargs in ({"iterations": 0}, {"area": 0}, {"area": float("nan")},
+                   {"gravity": -1}, {"convergence_threshold": -1},
+                   {"max_exact_repulsion_nodes": -1}):
+        with pytest.raises(ValueError):
+            next(force_directed_layout(_path_graph(3), **kwargs))

@@ -64,6 +64,43 @@ g.add_edge("alice", "bob", t_start=3, t_end=3)      # an instantaneous event (t_
 g.add_edge("alice", "carol")                         # always present (no bounds)
 ```
 
+**Loading temporal data.** Temporal networks are usually published as *contact sequences*, one row
+per event: `u v t` (u and v interacted at time t). Load them directly; you do not build
+`t_start`/`t_end` by hand:
+
+```python
+from hyperloom_core import (from_temporal_edgelist, from_pandas_temporal_edgelist,
+                            read_temporal_edgelist)
+
+g = read_temporal_edgelist("events.txt")                 # whitespace-separated u v t (# comments ok)
+g = read_temporal_edgelist("events.csv", delimiter=",", header=True, columns=(2, 3, 0))  # pick columns
+g = from_temporal_edgelist([("a", "b", 1), ("b", "c", 5)])           # (u, v, t) tuples
+g = from_pandas_temporal_edgelist(df, "src", "dst", "when", edge_attr=["kind"])   # DataFrame
+g = from_temporal_edgelist(rows, intervals=True)                     # (u, v, start, end) rows
+g = from_temporal_edgelist(rows, duration=30)                        # each contact lasts 30 time units
+```
+
+Each event becomes its own connector, so a repeated pair keeps every occurrence. A plain `(u, v, t)`
+event is instantaneous (`t_start == t_end == t`).
+
+**Time formats.** Every temporal loader takes the same options, so the format is never hardcoded:
+
+| Your timestamps | What to pass | Result |
+|---|---|---|
+| Datetime objects, `numpy.datetime64`, pandas datetimes | nothing | Stored as Unix seconds (naive times are UTC); the viewer shows dates |
+| ISO 8601 text: `2013-12-31 16:39:18`, `2020-01-01T10:00:00Z`, `2020-01-01 10:00+02:00`, `2020-01-01` | nothing | Same |
+| Text in another layout: `12/31/2013`, `31.12.2013 16:39` | `time_format="%m/%d/%Y"` (a `strptime` pattern) | Same |
+| Unix numbers | `time_unit="epoch_seconds"`, `"epoch_milliseconds"`, `"epoch_microseconds"` or `"epoch_nanoseconds"` | Converted to seconds; the viewer shows dates |
+| Any other numbers (day 0, 1, 2, ...; simulation steps) | nothing | Kept as given; the axis shows the numbers |
+
+Numbers that all look like Unix time (at least 1e9) with no `time_unit` produce a warning naming the unit
+they most likely are, because otherwise the axis would show raw numbers such as 1388507958 and
+millisecond values would be off by a factor of a thousand. `duration=` is in seconds once times are
+converted. Times are shown in UTC.
+
+Do not pass `(u, v, t)` rows to `from_edgelist`: its third value is a **weight**, so timestamps would
+load silently as weights.
+
 **Hypergraphs** — `add_hyperedge` takes a list of 3+ members instead of exactly 2:
 
 ```python
@@ -154,14 +191,24 @@ node shape (circles only). Both need real new rendering/API work, not just a wid
 - **Layer legend** (top-right, multiplex graphs only): one checkbox + color swatch per layer.
   Unchecking a layer hides its edges; edges with no layer always stay visible.
 - **Timeline** (bottom, temporal graphs only): click "All time" to start scrubbing, then drag the
-  slider to see only edges valid at that point (`t_start <= t <= t_end`).
+  slider. The selector chooses what the slider shows: **At this moment** (`t_start <= t <= t_end`,
+  right for intervals), **Trailing window** (events in the last N time units, the default for
+  contact sequences because a point event is otherwise visible only at its exact instant), or
+  **Everything so far** (all events up to t). The ribbon view splits the timeline into buckets; an
+  event on a bucket boundary appears in one bucket only.
 - **View mode** (top-left, shown when the graph has layers and/or temporal data): switch between
   **Flat** (the default overlay — everything on one plane, color-coded) and **Stack: layers** /
   **Stack: time**, which instead draw each layer (or each time-bucket) as its own separated plane,
   all sharing the same node layout, with faint threads connecting each node's copy from one plane
   to the next. This is the clearest way to see "layer" or "time" as an actual dimension rather than
-  just a color or filter. Stacked-time bucketing defaults to 6 buckets across the graph's temporal
-  span.
+  just a color or filter. In the **Time ribbon**, the controls at the bottom set the number of buckets
+  (2-24, default 6) and how time is split: **Equal time** gives every bucket the same duration, while
+  **Equal number of events** gives every bucket about the same number of events, so busy periods get
+  narrow buckets. Equal time is faithful to the clock but can leave one panel nearly empty and another
+  crowded when activity is uneven (the Reddit hyperlink network grows from 67K events in its first
+  bucket to 121K in its last). The legend shows how many events each bucket holds. An event exactly on a
+  bucket boundary is counted in one bucket only, and every event appears in exactly one bucket unless
+  it is an interval that spans several.
 
 ## Exporting
 
@@ -204,15 +251,97 @@ installed otherwise.
 
 ## Scale and performance
 
-- Force-directed layout uses exact pairwise repulsion up to 5,000 nodes; above that it falls back
-  to edge-driven placement only (no repulsion), trading layout quality for staying responsive at
-  100K+-node scale.
-- Edge rendering similarly has a size-based tradeoff: below ~20,000 edges, edges get full
-  per-edge color and adjustable width; above that, edges fall back to a cheap uniform-color,
-  fixed-width path so very large graphs (100K+ nodes, 200K+ edges) stay responsive to load and to
-  layout updates.
-- Both thresholds are about *degrading gracefully*, not failing — a 100K-node graph still loads,
-  renders, and updates live; it just looks cruder than a 50-node graph would.
+The layout uses blocked exact repulsion up to 512 nodes and a spatial-mesh
+approximation above that. It never disables repulsion. The approximation uses
+cell masses for distant forces and deterministic local samples within a cell;
+it is not an exact or Barnes–Hut solver. Large hyperedges use one centroid
+attraction per membership. Paths and cycles receive analytic layouts, and
+components occupy separate, stable tiles. Exhausting the iteration budget no
+longer means convergence. Direction and edge weight do not currently change
+force strength.
+
+Above 5,000 visible nodes, the viewer uses a **density overview**: spatial cells
+represent node populations. In sliced views only participating nodes contribute
+to each panel. Connections are deduplicated between cells; panels with over
+1,000 aggregate connections omit them and say so. Direction, hyperedge hulls,
+and individual picking are available in detailed neighborhoods, not density
+mode. This is deliberate aggregation, not a claim that all individual nodes
+remain readable. Search for a key and select a result to inspect its actual
+incident relationships. A neighborhood larger than 5,000 nodes stays aggregated.
+
+The renderer redraws when data, the camera, filters, or focus changes; pointer
+movement updates interaction overlays without redrawing the graph. Remaining
+large-graph limitations include force-approximation quality, dense neighborhoods,
+and first-frame aggregation cost. Hardware GPU and sustained streaming results
+still need broader validation. See [benchmark results](../benchmarks/README.md).
+
+### Search and neighborhood inspection
+
+**Find a node** searches keys (first 20 substring matches). Select a result to
+isolate its incident connectors and their members, including complete hyperedge
+memberships. The inspector shows attributes, neighbor count, and incident
+connector count across the full graph. Overview layer/time filters still apply;
+sliced views compare all slices of that neighborhood. **Show all nodes** clears
+focus and **Fit view** reframes the current content. This is incident-neighborhood
+exploration, not shortest-path analysis or an induced-neighbor subgraph.
+
+JavaScript clients use the same public API:
+
+```ts
+const matches = viewer.searchNodes("alice");
+if (matches.length) {
+  const info = viewer.inspectNode(matches[0].id);
+  viewer.focusNeighborhood(matches[0].id);
+}
+viewer.focusNeighborhood(null);
+viewer.fitView();
+```
+
+### Style, filter, select and path tools
+
+The right-hand panel of the viewer has these controls (all keyboard-accessible):
+
+- **Color by / Size by**: color nodes by any categorical attribute (up to 200 distinct values) and
+  size them by degree or a numeric attribute. In the density overview each cell takes its most common
+  color.
+- **Filter**: keep nodes by attribute value, numeric range and minimum degree. A connector stays visible
+  only if all its endpoints do, and layer/time filters and neighbourhood focus still apply. Node
+  positions do not change, so the filtered view keeps the same map. Reset filter clears it.
+- **Select and path**: click nodes (or use the + button beside a search result) to select up to eight.
+  **Find path** shows the fewest-hop route between two selected nodes (direction ignored; a hyperedge is
+  one hop) or says there is none. **Show neighbourhood** works with one selected node.
+- **Zoom**: + and - buttons in addition to the mouse wheel.
+
+The same operations are on the JavaScript handle:
+
+```ts
+viewer.getNodeAttributes();                      // names, kinds, value counts, numeric ranges
+viewer.setNodeFilter({ attribute: "team", values: ["red"], minDegree: 2 });   // returns nodes shown
+viewer.setNodeFilter(null);
+viewer.setNodeColorBy("team");
+viewer.setNodeSizeBy("degree");                  // or a numeric attribute, or null
+const route = viewer.focusPath(a, b);            // { nodes, connectors, hops } or null
+viewer.setHighlightedNodes([a, b]);
+viewer.zoomBy(1.5);
+```
+
+Not yet available: choosing a layout algorithm from the viewer, collapsing communities, and pinning
+nodes. Individual nodes cannot be clicked in the density overview (above 5,000 visible nodes); filter
+or search down to a subset first.
+
+### Closing notebook sessions
+
+Request a handle and close it before replacing a long-running viewer:
+
+```python
+handle = show(g, return_handle=True)
+# later, before rerunning the viewer:
+handle.close()  # idempotent; releases HTTP and WebSocket servers
+```
+
+Outside Jupyter, use `block=False` to receive the handle immediately. Handles
+also support a `with` block. Layout steps run off the server event loop and
+remain backpressured by the client.
 
 ## Known limitations
 
@@ -230,3 +359,36 @@ Worth knowing about rather than discovering by surprise:
   only export in the flat view. The stacked view's own elements (planes, threads, per-slice edges)
   export correctly.
 - **Jupyter integration is the iframe stopgap** described above, not a full anywidget integration.
+
+### Aligned slice layouts
+
+The viewer's **Layer atlas** places multiplex layers in separate grid panels.
+**Time ribbon** places six equal-duration time windows from left to right.
+Both keep the same node positions in every panel, making connectivity changes
+comparable without overlapping planes or a thread for every node. Panel numbers
+match reading order. Unassigned edges receive a panel only when present.
+
+JavaScript users can choose the arrangement independently of the slicing axis:
+
+```ts
+viewer.setStackMode("layer", { layout: "atlas" });
+viewer.setStackMode("time", { layout: "ribbon", timeBuckets: 8 });
+viewer.setStackMode("layer", { layout: "stack" }); // original depth view
+viewer.setStackMode(null); // overview
+```
+
+`timeBuckets` must be positive and finite; fractions are floored and counts are
+capped at 64. Time windows include edges whose lifetimes intersect the window,
+including its boundaries. A ribbon is a sequence of interval summaries, not
+individual snapshots. Pan and zoom work in every arrangement; entering a slice
+view fits its panels. SVG exports use the same geometry and panel headings.
+Directed edges retain arrowheads, and hyperedges appear as translucent hulls on
+all matching panels. Hover a node to reveal its key and highlight its copies across
+panels; the existing `onHover(nodeId)` callback works in these views. Configured
+node labels appear on each panel. The frontmost panel takes priority when picking
+in the overlapping stack arrangement. These are arrangements based on aligned
+small multiples, not a claim of research novelty.
+
+To run the WebGL smoke check, start the app's Vite server on port 5173, then run
+`node scripts/verify-slices.mjs`. Set `CHROME_PATH` if Chrome is installed somewhere
+other than `/usr/bin/google-chrome`. Screenshots are written to `/tmp`.

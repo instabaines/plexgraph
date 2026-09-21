@@ -32,6 +32,8 @@ async def test_show_serves_static_app_and_streams_graph():
         "the built app is required for this end-to-end check"
     )
 
+    assert handle.url == _viewer_url("localhost", handle.http_port, handle.ws_port, {})
+
     with urllib.request.urlopen(f"http://localhost:{handle.http_port}/index.html") as resp:
         assert resp.status == 200
         html = resp.read().decode()
@@ -148,3 +150,10 @@ def test_show_returns_none_by_default():
     # trigger Jupyter's automatic display of a ShowHandle repr.
     result = show(_small_graph(), open_browser=False, block=False)
     assert result is None
+
+
+def test_show_handle_closes_servers_idempotently():
+    handle = show(_small_graph(), open_browser=False, block=False, return_handle=True)
+    handle.close()
+    handle.close()
+    assert not handle.thread.is_alive()

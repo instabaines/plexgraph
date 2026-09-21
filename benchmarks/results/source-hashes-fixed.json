@@ -1,0 +1,8 @@
+{
+  "packages/core/hyperloom_core/algorithms/layout.py": "2a7f2a3a90f61a58a11c282ef66b15ea3d78d559f5ec61997149215f155b0f29",
+  "packages/viz-core/src/render/renderer.ts": "f865b45201cb877394932ca2f853433044c454fa4d8ae38b15bf6d616df4262e",
+  "packages/viz-core/src/render/density.ts": "91c099c9cf9b8347001276865b38f4d56af6b092f88dd4ad9333b452e55c314c",
+  "packages/viz-core/src/interaction/graph-index.ts": "73df673b021fb372c3a89a64f9edf43e37e72e77b0bfb0fb680d420e4ee0bd2c",
+  "packages/viz-core/src/layout/slices.ts": "ada4d56079c3634ad5dd163e2b4e5357381b006d1705743ecbb7b883243295ff",
+  "packages/viz-core/src/layout/annotations.ts": "4a4e2ed35bd5f328338f469b6253b9da9cebd0811a073ee3ed8b9b975d9f2917"
+}

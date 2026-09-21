@@ -82,3 +82,34 @@ def test_encode_layout_step_roundtrip():
     assert decoded["num_nodes"] == 2
     positions = np.frombuffer(decoded["positions"], dtype=np.float32).reshape(-1, 2)
     np.testing.assert_allclose(positions, [[0.0, 1.0], [2.0, 3.0]], rtol=1e-5)
+
+
+def test_integers_a_browser_cannot_hold_exactly_travel_as_text():
+    huge = 24811812513198111524  # larger than any 64-bit integer; a real subreddit name
+    beyond_double = 2**60  # fits MessagePack but would round to a different number in the browser
+    g = Graph()
+    g.add_node(huge)
+    g.add_node(beyond_double, big=beyond_double)
+    g.add_node(7, count=2**40)
+    g.add_edge(huge, 7, note=huge)
+    msg = decode(encode_graph(g))
+    assert [n["key"] for n in msg["nodes"]] == [str(huge), str(beyond_double), 7]
+    assert msg["nodes"][1]["attrs"]["big"] == beyond_double or msg["nodes"][1]["attrs"]["big"] == str(beyond_double)
+    assert msg["nodes"][2]["attrs"]["count"] == 2**40  # exact in a double, left alone
+    assert msg["connectors"][0]["attrs"]["note"] == str(huge)
+
+
+def test_loader_keeps_names_that_only_look_like_numbers(tmp_path):
+    from hyperloom_core import read_temporal_edgelist
+    f = tmp_path / "e.txt"
+    f.write_text("24811812513198111524 007 1\n5 -3 2\n")
+    keys = [n.key for n in read_temporal_edgelist(f).nodes()]
+    assert keys == ["24811812513198111524", "007", 5, -3]
+
+
+def test_time_unit_travels_with_the_graph():
+    g = Graph()
+    g.add_node("a"); g.add_node("b"); g.add_edge("a", "b", t_start=1, t_end=1)
+    assert decode(encode_graph(g))["time_unit"] is None
+    g.time_unit = "epoch_seconds"
+    assert decode(encode_graph(g))["time_unit"] == "epoch_seconds"

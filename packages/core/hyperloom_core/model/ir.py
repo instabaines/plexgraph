@@ -112,6 +112,10 @@ class Graph:
     schema_version: int = IR_SCHEMA_VERSION
 
     def __init__(self) -> None:
+        # How connector times should be read: "epoch_seconds" when they are calendar times (Unix seconds), else None
+        # for plain numbers. Set by the temporal loaders; the viewer uses it to show dates.
+        self.time_unit: str | None = None
+
         # Nodes
         self._node_key_to_id: dict[Hashable, NodeId] = {}
         self._node_attrs: list[dict[str, Any]] = []

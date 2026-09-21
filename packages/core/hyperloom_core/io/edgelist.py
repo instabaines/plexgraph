@@ -19,6 +19,9 @@ def from_edgelist(
     - (u, v, weight)
     - (u, v, attrs_dict)
 
+    A third number is a *weight*, not a timestamp. For `(u, v, t)` temporal events use
+    `from_temporal_edgelist`.
+
     Nodes are created automatically the first time each key is seen, using
     the edge-list value itself as the node's key (so node identity is
     whatever hashable value you passed — a string, an int, a tuple, ...).

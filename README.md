@@ -2,7 +2,7 @@
 
 A graph/network visualization library built for complex network types — multiplex/multilayer
 networks, hypergraphs, and temporal/dynamic networks — as first-class citizens, plus
-GPU-accelerated rendering for large (100K+ node) graphs.
+GPU-accelerated rendering, with large-graph scalability still under evaluation.
 
 Existing tools (networkx/igraph + matplotlib, Gephi) treat these network types as afterthoughts
 bolted onto a plain-graph model. `hyperloom` instead models every graph as a single unified
@@ -17,7 +17,9 @@ a graph on screen.
 ## Status
 
 Early development (Phase A: core spine — IR, Python API, WebGL renderer, streaming layout).
-Not yet published.
+Not yet published. The current layout and sliced renderer are not validated for
+production use at 100K nodes. See the [evaluation lab](examples/notebooks/evaluation.ipynb)
+and [measured limitations](benchmarks/README.md).
 
 ## Quick start
 
