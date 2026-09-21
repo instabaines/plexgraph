@@ -35,7 +35,7 @@ const screenshotPath = process.argv[3] ?? null;
 const chrome = process.env.CHROME_PATH || (existsSync("/usr/bin/google-chrome") ? "/usr/bin/google-chrome" : undefined);
 const browser = await chromium.launch({
   executablePath: chrome,
-  args: ["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"],
+  args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
 });
 const page = await browser.newPage({ viewport: { width: 1000, height: 800 } });
 

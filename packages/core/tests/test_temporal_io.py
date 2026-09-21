@@ -1,4 +1,5 @@
 import datetime as dt
+import os
 
 import numpy as np
 import pytest
@@ -223,7 +224,8 @@ def test_numeric_text_in_tuples_is_a_number_not_a_failed_date():
 
 def test_error_location_survives_backslashes_in_the_path(tmp_path):
     # Windows paths contain backslashes; they must not be treated as regex escapes when the message is built.
-    f = tmp_path / "C_Users_me.txt".replace("_", "\\")
+    # On Windows the temp directory already has them; elsewhere put one in the file name.
+    f = tmp_path / ("events.txt" if os.name == "nt" else "C\\Users\\me.txt")
     f.write_text("1 2 soon\n")
     with pytest.raises(ValueError, match="soon"):
         read_temporal_edgelist(f)
