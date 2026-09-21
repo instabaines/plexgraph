@@ -1,10 +1,14 @@
+import sys
+import types
+import urllib.parse
 import urllib.request
 
 import msgpack
 import pytest
 import websockets
 
-from plexgraph_bridge.launcher import _build_style_dict, _in_jupyter, _viewer_url, show
+from plexgraph_bridge import launcher
+from plexgraph_bridge.launcher import _build_style_dict, _in_jupyter, _notebook_kind, _viewer_url, show
 from plexgraph_core.model.ir import Graph
 
 
@@ -188,3 +192,57 @@ def test_an_empty_build_directory_is_not_mistaken_for_a_frontend(tmp_path, monke
     monkeypatch.setattr(launcher, "_APP_DIST", tmp_path / "dist")
     monkeypatch.setattr(launcher, "_APP_PUBLIC", tmp_path / "public")
     assert launcher._static_app_dir() == tmp_path / "public"
+
+
+class _ColabShell:
+    """Stands in for google.colab._shell.Shell, which is not a ZMQInteractiveShell."""
+
+
+_ColabShell.__module__ = "google.colab._shell"
+
+
+@pytest.fixture
+def colab(monkeypatch):
+    """Pretend to be a Colab kernel: its shell class, and a port proxy that answers like Colab's."""
+    import IPython
+
+    monkeypatch.setattr(IPython, "get_ipython", lambda: _ColabShell())
+    asked = []
+
+    def eval_js(code):
+        asked.append(code)
+        port = int(code.split("proxyPort(")[1].split(",")[0])
+        return f"https://{port}-abc123.colab.example/"
+
+    module = types.ModuleType("google.colab")
+    module.output = types.SimpleNamespace(eval_js=eval_js)
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+    monkeypatch.setitem(sys.modules, "google.colab", module)
+    return asked
+
+
+def test_colab_is_recognised_as_a_notebook_and_not_as_plain_jupyter(colab):
+    assert _notebook_kind() == "colab"
+    assert _in_jupyter() is True
+
+
+def test_show_in_colab_does_not_block_or_open_a_browser_and_uses_the_port_proxy(colab, monkeypatch):
+    opened, shown = [], []
+    monkeypatch.setattr(launcher.webbrowser, "open", lambda url: opened.append(url))
+    monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: shown.append(url))
+    handle = show(_small_graph(), layout_iterations=2, return_handle=True)  # would hang forever if it blocked
+    try:
+        assert opened == []
+        assert len(shown) == 1 and shown[0] == handle.url
+        web, query = handle.url.split("/?", 1)
+        assert web == f"https://{handle.http_port}-abc123.colab.example"
+        ws = urllib.parse.parse_qs(query)["ws"][0]
+        assert ws == f"wss://{handle.ws_port}-abc123.colab.example"
+        assert len(colab) == 2  # the page's port and the socket's port
+    finally:
+        handle.close()
+
+
+def test_colab_url_carries_the_style(colab):
+    url = launcher._colab_viewer_url(8000, 8001, {"nodeColor": [1, 0, 0, 1]})
+    assert url.startswith("https://8000-abc123.colab.example/?ws=wss%3A%2F%2F8001-abc123.colab.example&style=")

@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+### Fixed
+- `show()` in Google Colab blocked forever and displayed nothing: Colab was not recognised as a notebook (its shell
+  is not a `ZMQInteractiveShell`), so the call waited on a browser that a remote machine cannot open. Colab is now
+  detected, `show()` returns immediately, and the viewer is reached through Colab's port proxy.
+- The viewer accepts a full `ws://` or `wss://` address in `?ws=`, not only a port number.
+
 ## [0.1.0]
 
 First release, as a single installable package: `pip install plexgraph`.

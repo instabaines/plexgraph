@@ -69,23 +69,53 @@ def _serve_static(directory: Path, host: str, port: int) -> http.server.Threadin
     return httpd
 
 
-def _in_jupyter() -> bool:
-    """True inside a running Jupyter kernel (notebook, JupyterLab, or the
-    VS Code/Cursor notebook UI) — false in a plain script or REPL, where
-    there's no cell output to embed into and blocking the calling thread
-    is fine."""
+def _notebook_kind() -> str | None:
+    """"jupyter" inside a running Jupyter kernel (notebook, JupyterLab, or the VS Code/Cursor notebook UI),
+    "colab" inside Google Colab, None in a plain script or REPL, where there's no cell output to embed
+    into and blocking the calling thread is fine.
+
+    Colab has its own shell class (`google.colab._shell.Shell`, not ZMQInteractiveShell), and its kernel runs on
+    a remote machine, so it needs a different way of reaching the viewer."""
     try:
         from IPython import get_ipython
     except ImportError:
-        return False
+        return None
     shell = get_ipython()
-    return shell is not None and shell.__class__.__name__ == "ZMQInteractiveShell"
+    if shell is None:
+        return None
+    if type(shell).__module__.startswith("google.colab"):
+        return "colab"
+    return "jupyter" if shell.__class__.__name__ == "ZMQInteractiveShell" else None
+
+
+def _in_jupyter() -> bool:
+    return _notebook_kind() is not None
 
 
 def _display_inline(url: str, *, width: int, height: int) -> None:
     from IPython.display import IFrame, display
 
     display(IFrame(src=url, width=width, height=height))
+
+
+def _colab_proxy_url(port: int) -> str:
+    """The address at which the Colab browser can reach a port of the kernel's machine."""
+    from google.colab import output  # type: ignore[import-not-found]
+
+    return str(output.eval_js(f"google.colab.kernel.proxyPort({port}, {{'cache': true}})")).rstrip("/")
+
+
+def _colab_viewer_url(http_port: int, ws_port: int, style: dict[str, Any]) -> str:
+    """Colab kernels run on a remote machine, so `localhost` in the iframe would be the user's own computer.
+    Both servers are reached through Colab's port proxy instead, and the viewer is given the WebSocket address
+    in full (`?ws=wss://...`) rather than as a port number."""
+    web = _colab_proxy_url(http_port)
+    socket = _colab_proxy_url(ws_port)
+    socket = "wss://" + socket.split("://", 1)[-1]
+    url = f"{web}/?ws={urllib.parse.quote(socket, safe='')}"
+    if style:
+        url += f"&style={urllib.parse.quote(json.dumps(style))}"
+    return url
 
 
 # Python-friendly (snake_case) names for the subset of viz-core's
@@ -388,7 +418,8 @@ def show(
         }
     )
 
-    in_jupyter = _in_jupyter()
+    notebook = _notebook_kind()
+    in_jupyter = notebook is not None
     if in_jupyter:
         block = False
         open_browser = False
@@ -450,7 +481,10 @@ def show(
 
     url = None
     if actual_http_port is not None:
-        url = _viewer_url(host, actual_http_port, actual_ws_port, style)
+        if notebook == "colab":
+            url = _colab_viewer_url(actual_http_port, actual_ws_port, style)
+        else:
+            url = _viewer_url(host, actual_http_port, actual_ws_port, style)
         if in_jupyter:
             logger.info("displaying inline: %s", url)
             _display_inline(url, width=width, height=height)
