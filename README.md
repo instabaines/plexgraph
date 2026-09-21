@@ -23,36 +23,38 @@ and [measured limitations](benchmarks/README.md).
 
 ## Quick start
 
-One-time setup — build the frontend and set up the two Python packages (each has its own venv
-for now; a real release will ship a single installable `hyperloom` package):
+One-time setup: build the frontend, then create one Python environment for the whole repo (both
+packages, the optional pandas/networkx loaders, tests, notebooks and benchmarks). A real release will ship
+a single installable `hyperloom` package.
 
 ```sh
 # 1. Frontend: install JS deps and build the static app the Python side serves.
 pnpm install
 pnpm --filter @hyperloom/app build
 
-# 2. Python core: the graph model, algorithms, wire protocol.
-cd packages/core
+# 2. Python: one environment. Either uv ...
+uv sync                                       # creates .venv with everything
+# ... or plain pip:
 python -m venv .venv
-.venv/Scripts/pip install -e ".[dev]"      # .venv/bin/pip on macOS/Linux
-cd ../..
-
-# 3. Python bridge: the WebSocket server + browser launcher. Depends on core,
-#    installed from the local path since this isn't published yet.
-cd packages/bridge
-python -m venv .venv
-.venv/Scripts/pip install -e ../core -e ".[dev]"   # .venv/bin/pip on macOS/Linux
-cd ../..
+.venv/bin/pip install -r requirements-dev.txt     # .venv\Scripts\pip on Windows
 ```
 
-Then, from the repo root, run any example with the bridge's venv:
+Then, from the repo root, run any example with that environment's Python (`.venv/bin/python`, or
+`.venv\Scripts\python.exe` on Windows; `uv run python ...` also works):
 
 ```sh
-packages/bridge/.venv/Scripts/python.exe examples/python/hello_graph.py       # 60-node demo
-packages/bridge/.venv/Scripts/python.exe examples/python/large_graph_100k.py  # 100K-node scale check
+.venv/bin/python examples/python/hello_graph.py       # 60-node demo
+.venv/bin/python examples/python/large_graph_100k.py  # 100K-node scale check
 ```
 
 Each opens a browser tab rendering the graph, with the layout animating as it converges.
+
+**What gets installed.** `hyperloom-core` needs `numpy` and `msgpack`; `hyperloom-bridge` adds
+`websockets` (and `ipython` for inline Jupyter display, via its `jupyter` extra). `pandas` and `networkx`
+are optional, needed only by the loaders that take those types: `pip install "hyperloom-core[pandas]"`,
+`"hyperloom-core[networkx]"`, or `"hyperloom-core[all]"`. The notebooks use the extras above plus
+`scipy`, `python-igraph` and `matplotlib` (see `benchmarks/requirements.txt`); `requirements-dev.txt` and
+`uv sync` include all of it.
 
 To visualize your own graph:
 
@@ -76,8 +78,7 @@ feature is also in [`examples/notebooks/tour.ipynb`](examples/notebooks/tour.ipy
 Run the test suites with:
 
 ```sh
-packages/core/.venv/Scripts/python.exe -m pytest packages/core/tests
-packages/bridge/.venv/Scripts/python.exe -m pytest packages/bridge/tests
+.venv/bin/python -m pytest packages           # core and bridge
 pnpm --filter @hyperloom/viz-core test
 ```
 
