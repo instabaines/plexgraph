@@ -33,6 +33,8 @@ logger = logging.getLogger("plexgraph_bridge.widget")
 # A frame bigger than this travels as several messages and is put back together in the page. Notebook servers and the
 # hosts in front of them limit the size of one message and the number per second; a few big pieces stay well inside both.
 CHUNK_BYTES = 1 << 20
+# Errors a viewer reports are kept, most recent last, up to this many.
+_MAX_REPORTED_ERRORS = 50
 
 _SCRIPT = re.compile(r'<script\b[^>]*\bsrc="(?P<src>[^"]+)"[^>]*>\s*</script>')
 _LINK = re.compile(r'<link\b(?P<attrs>[^>]*)>')
@@ -157,6 +159,10 @@ class _WidgetBridge(ClientHub):
             self._widget.send({"type": "frame", "stream": stream, "id": self._frame, "index": index, "count": count},
                               [bytes(piece)])
 
+    @property
+    def stopped(self) -> bool:
+        return self._stopped
+
     def stop(self) -> None:
         self._stopped = True
         if not self._background.is_closed():
@@ -180,16 +186,48 @@ class GraphWidget(anywidget.AnyWidget):
 
             query += f"&style={quote(json.dumps(viewer_style))}"
         super().__init__(height=height, viewer_query=query)
+        self._reports_lock = threading.Lock()
+        self._state: dict[str, Any] = {}
+        self._errors: list[dict[str, Any]] = []
         self._plexgraph = _WidgetBridge(self, graph, layout_iterations=layout_iterations, seed=seed, style=controller)
         if controller is not None:
             controller.bind(self._plexgraph.push_style)
         self.on_msg(self._on_page_message)
 
     def _on_page_message(self, _widget: Any, content: Any, _buffers: Any) -> None:
-        if isinstance(content, dict) and content.get("type") == "hello":
+        if not isinstance(content, dict):
+            return
+        if content.get("type") == "hello":
             self._plexgraph.hello()
+        elif content.get("type") == "report":
+            self._record_report(content.get("kind"), content.get("data"))
+
+    def _record_report(self, kind: Any, data: Any) -> None:
+        with self._reports_lock:
+            if kind == "state" and isinstance(data, dict):
+                self._state = data
+            elif kind == "error" and isinstance(data, dict):
+                self._errors.append(data)
+                del self._errors[:-_MAX_REPORTED_ERRORS]
+                logger.warning("the viewer reported an error: %s", data.get("message"))
+
+    @property
+    def diagnostics(self) -> dict[str, Any]:
+        """What the viewer says it sees, for working out why a viewer is blank or drawn wrongly: the size of its canvas
+        and window, the pixel ratio, the WebGL renderer and whether its context was lost, what level of detail it chose,
+        and any errors it hit. `state` is empty until the viewer has loaded and settled (a second or two after it
+        appears)."""
+        with self._reports_lock:
+            return {"state": dict(self._state), "errors": list(self._errors)}
 
     def close(self) -> None:
-        """Stop streaming and release the widget. Safe to call twice."""
+        """Stop streaming to the viewer. Safe to call twice.
+
+        The viewer keeps showing what it has, marked as disconnected: it can no longer be updated, but the picture stays
+        in the cell's output. (Closing an ipywidgets widget normally destroys its connection and blanks every view of
+        it, which is not what closing a graph viewer should do to a notebook. The widget itself is released with the
+        kernel, or when it is no longer referenced.)"""
+        already = self._plexgraph.stopped
         self._plexgraph.stop()
-        super().close()
+        if not already and getattr(self, "comm", None) is not None:
+            self.send({"type": "closed"})

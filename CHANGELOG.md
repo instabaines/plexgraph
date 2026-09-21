@@ -17,6 +17,10 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 - `anywidget` is an optional extra, `pip install "plexgraph[jupyter]"`, not a requirement: hosted notebooks manage their
   own IPython and ipywidgets, and installing plexgraph must not change them. The widget does not import `websockets`, so
   `pip install --no-deps plexgraph anywidget psygnal` works where nothing at all may be replaced.
+- `handle.diagnostics()` (and `GraphWidget.diagnostics`) returns what the notebook viewer reports about itself: its canvas
+  and window size, pixel ratio, WebGL renderer and whether the context was lost, the level of detail it chose, and any
+  errors it hit. For working out why a viewer is blank or drawn wrongly on a platform where the browser console is out of
+  reach.
 - `scripts/verify-widget.mjs` runs the widget in a real JupyterLab in a real browser (in CI): it renders, a style change
   arrives live, nothing listens on a port, and the viewer comes back after a page reload.
 
@@ -28,6 +32,9 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   address, with the token, for your own WebSocket clients.
 
 ### Fixed
+- Closing a widget (`handle.close()`) destroyed the notebook connection and blanked its output, so a notebook that closes
+  the previous viewer when it shows the next lost every earlier picture. It now stops the viewer updating and leaves the
+  picture on screen, marked as closed.
 - The viewer could draw nothing at all, in a 1x1 pixel area, when its canvas was created before its container had a
   size (which happens inside a notebook) and then resized. The renderer now tells its graphics library when the canvas
   changes size, and the app follows the canvas with a `ResizeObserver`.

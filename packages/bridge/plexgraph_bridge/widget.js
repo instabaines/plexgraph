@@ -30,6 +30,10 @@ export default {
     const frame = (bytes) => toViewer({ plexgraph: "frame", data: bytes }, [bytes]);
 
     const onKernel = (msg, buffers) => {
+      if (msg.type === "closed") { // the kernel stopped this viewer; what it shows stays on screen
+        toViewer({ plexgraph: "closed" });
+        return;
+      }
       if (msg.type !== "frame" || !buffers.length) return;
       if (msg.stream !== stream) { // the kernel started over (the viewer reloaded): drop anything half-received
         stream = msg.stream;
@@ -61,9 +65,9 @@ export default {
 
     // The viewer says hello once it is listening, and again if it is reloaded; each time the kernel starts the stream.
     const onViewer = (event) => {
-      if (event.source === iframe.contentWindow && event.data && event.data.plexgraph === "hello") {
-        model.send({ type: "hello" });
-      }
+      if (event.source !== iframe.contentWindow || !event.data) return;
+      if (event.data.plexgraph === "hello") model.send({ type: "hello" });
+      else if (event.data.plexgraph === "report") model.send({ type: "report", kind: event.data.kind, data: event.data.data });
     };
     window.addEventListener("message", onViewer);
 

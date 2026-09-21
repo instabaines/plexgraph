@@ -379,6 +379,20 @@ hosted notebook it can leave a blank frame (`show()` warns on Kaggle, JupyterHub
   its WebSocket from a single port and shows it with Colab's `serve_kernel_port_as_iframe`. Colab treats a second
   forwarded port as a different origin and refuses the socket, which is why there is only one.
 - Use `height` to set the widget's height in pixels (default 600); it is always as wide as the cell.
+- `handle.close()` stops the viewer updating but leaves its picture in the cell, marked as closed. A notebook that
+  closes the previous viewer when it shows the next (as the tour does) therefore keeps every earlier picture. A viewer
+  closed before it had loaded stays empty, so give a viewer a moment before closing it.
+- **If a viewer looks wrong** (blank, tiny, a single dot), keep the handle, wait a few seconds for the viewer to settle,
+  and call `handle.diagnostics()`:
+
+  ```python
+  h = show(g, return_handle=True)
+  # ... a few seconds later:
+  h.diagnostics()   # canvas size, pixel ratio, WebGL renderer and whether its context was lost, level of detail, errors
+  ```
+
+  The viewer reports these itself, so it works where the browser's console is out of reach. Please include the output in
+  a bug report.
 
 ## Scale and performance
 

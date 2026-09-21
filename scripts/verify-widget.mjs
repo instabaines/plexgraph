@@ -17,7 +17,8 @@ const port = 8900 + Math.floor(Math.random() * 500), token = 'verify';
 const cell = source => ({ cell_type: 'code', metadata: {}, execution_count: null, outputs: [], source, id: Math.random().toString(16).slice(2, 10) });
 writeFileSync(join(dir, 'widget.ipynb'), JSON.stringify({
   cells: [
-    cell(`import plexgraph as pg
+    cell(`import json
+import plexgraph as pg
 g = pg.Graph()
 for i in range(60): g.add_node(i, team=['a', 'b', 'c'][i % 3])
 for i in range(60):
@@ -25,7 +26,9 @@ for i in range(60):
     g.add_edge(i, (i * 7 + 3) % 60)
 h = pg.show(g, seed=0, layout_iterations=30, node_color=pg.by_attribute('team', palette='tab10'), node_size=12, return_handle=True)`),
     cell(`h.style(node_color='crimson')`),
-    cell(`print('PORTS', h.ws_port, h.http_port, h.url, type(h.widget).__name__)`),
+    cell(`print('PORTS', h.ws_port, h.http_port, h.url, type(h.widget).__name__)
+print('DIAGNOSTICS', json.dumps(h.diagnostics()))`),
+    cell(`h.close()`),
   ],
   metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' } }, nbformat: 4, nbformat_minor: 5,
 }));
@@ -43,7 +46,7 @@ try {
     await new Promise(r => setTimeout(r, 250));
   }
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-  const page = await browser.newPage({ viewport: { width: 1300, height: 950 } });
+  const page = await browser.newPage({ viewport: { width: 1300, height: 950 }, deviceScaleFactor: Number(process.env.DPR || 1) });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   // JupyterLab unloads the output of a cell that scrolls out of view, which rebuilds the widget (and is exercised on
@@ -114,6 +117,13 @@ try {
   const printed = await page.locator('.jp-OutputArea-output pre').filter({ hasText: 'PORTS' }).first().textContent({ timeout: 30000 });
   assert.match(printed, /PORTS None None None GraphWidget/, printed);
   console.log('ok: the widget uses no port');
+  // ...and the viewer has told the kernel what it sees, so a misbehaving one can be diagnosed from Python.
+  const reported = JSON.parse((await page.locator('.jp-OutputArea-output pre').filter({ hasText: 'DIAGNOSTICS' }).first().textContent()).split('DIAGNOSTICS')[1]);
+  assert.equal(reported.state.graph.nodes, 60, 'the viewer reported its graph');
+  assert.ok(reported.state.canvas.pixels[0] > 100 && reported.state.canvas.pixels[1] > 100, 'the viewer reported a real canvas size');
+  assert.equal(reported.state.gl.lost, false); assert.deepEqual(reported.errors, []);
+  assert.ok(reported.state.gl.viewport[2] > 100, 'and a viewport that matches it: ' + JSON.stringify(reported.state.gl.viewport));
+  console.log('ok: the viewer reports its state to the kernel');
 
   // 4. Reloading the page brings the viewer back. The kernel is still running with the graph and its style, so the
   // widget only has to ask it to stream again. (The notebook is saved first: JupyterLab redraws outputs from the file.)
@@ -126,8 +136,16 @@ try {
   assert.ok(await share(frame, () => hex('#dc143c')) >= 0.6, 'after a reload the viewer is back, with the live style');
   console.log('ok: the viewer survives a page reload');
 
+  // 5. Closing a viewer stops it updating but leaves its picture in the cell (a notebook that closes the previous viewer
+  // when it shows the next must not lose the earlier ones).
+  await page.evaluate(() => { const nb = window.jupyterapp.shell.currentWidget.content; nb.activeCellIndex = 3; return window.jupyterapp.commands.execute('notebook:run-cell'); });
+  await frame.waitForFunction(() => /closed/.test(document.getElementById('status')?.textContent || ''), null, { timeout: 30000 });
+  assert.equal(await frame.evaluate(() => window.__plexgraphHandle.getVisibleNodeCount()), 60, 'the closed viewer still holds its graph');
+  assert.ok(await share(frame, () => hex('#dc143c')) >= 0.6, 'and still shows it');
+  console.log('ok: a closed viewer keeps its picture');
+
   assert.deepEqual(errors.filter(e => !/ResizeObserver|favicon/.test(e)), [], 'no page errors');
-  console.log('PASS: notebook widget renders, restyles live, uses no port, and survives a reload');
+  console.log('PASS: notebook widget renders, restyles live, uses no port, survives a reload, and keeps its picture when closed');
 } catch (error) {
   console.log('FAIL:', error.message, '\n--- jupyter log tail ---\n' + labLog.slice(-1200));
   process.exitCode = 1;

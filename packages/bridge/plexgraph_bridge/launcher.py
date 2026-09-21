@@ -287,6 +287,11 @@ class ShowHandle:
     url: str | None = None  # where the viewer is; None when there is no address to give (no viewer served, or Colab)
     _style: StyleController | None = field(default=None, repr=False)
 
+    def diagnostics(self) -> dict[str, Any]:
+        """What the notebook viewer reports about itself (canvas size, WebGL, level of detail, errors); see
+        `GraphWidget.diagnostics`. Empty for a viewer that is not a notebook widget."""
+        return self.widget.diagnostics if self.widget is not None else {}
+
     @property
     def ws_url(self) -> str:
         """The address a WebSocket client connects to (the viewer does this itself; it is for your own clients).

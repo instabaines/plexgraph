@@ -32,13 +32,17 @@ class Page:
 
     def __init__(self, view: GraphWidget) -> None:
         self.raw: list[tuple[dict, bytes]] = []
+        self.notices: list[dict] = []  # messages that are not frames (the kernel telling the page something)
         self.lock = threading.Lock()
         view.send = self._send  # type: ignore[method-assign]
         self.view = view
 
     def _send(self, content, buffers=None):
         with self.lock:
-            self.raw.append((content, bytes(buffers[0])))
+            if content.get("type") == "frame":
+                self.raw.append((content, bytes(buffers[0])))
+            else:
+                self.notices.append(content)
 
     def hello(self) -> None:
         self.view._on_page_message(self.view, {"type": "hello"}, [])
@@ -197,6 +201,19 @@ def test_close_stops_streaming_and_is_safe_twice(make_widget):
     page.hello()  # a viewer that says hello after close is ignored
     time.sleep(0.3)
     assert len(page.raw) == count
+
+
+def test_close_leaves_the_viewer_on_screen_and_tells_it_once(make_widget):
+    # Closing an ipywidgets widget normally destroys the connection and blanks every view of it. A notebook that closes
+    # the previous viewer when it shows the next (as the tour does) must not lose the earlier pictures.
+    view = make_widget(_graph(40), layout_iterations=300, seed=1)
+    page = Page(view)
+    page.hello()
+    page.wait_for(lambda fs: fs if len(fs) >= 2 else None)
+    view.close()
+    view.close()
+    assert view.comm is not None, "the connection must stay open so the page keeps its picture"
+    assert page.notices == [{"type": "closed"}]
 
 
 def test_viewer_settings_travel_to_the_page(make_widget):
@@ -386,3 +403,42 @@ def test_the_hosted_notebook_warning_says_how_to_get_the_widget(monkeypatch):
     with pytest.warns(RuntimeWarning, match=r"plexgraph\[jupyter\]"):
         handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
     handle.close()
+
+
+# ---- what the viewer reports about itself
+
+def test_the_viewers_state_report_is_kept_for_diagnosis(make_widget):
+    view = make_widget()
+    assert view.diagnostics == {"state": {}, "errors": []}
+    view._on_page_message(view, {"type": "report", "kind": "state", "data": {"canvas": {"pixels": [868, 348]}, "gl": {"lost": False}}}, [])
+    view._on_page_message(view, {"type": "report", "kind": "state", "data": {"canvas": {"pixels": [900, 400]}}}, [])
+    assert view.diagnostics["state"] == {"canvas": {"pixels": [900, 400]}}  # the latest
+
+
+def test_errors_the_viewer_reports_are_kept_logged_and_capped(make_widget, caplog):
+    view = make_widget()
+    with caplog.at_level("WARNING", logger="plexgraph_bridge.widget"):
+        for i in range(60):
+            view._on_page_message(view, {"type": "report", "kind": "error", "data": {"message": f"boom {i}"}}, [])
+    errors = view.diagnostics["errors"]
+    assert len(errors) == widget_module._MAX_REPORTED_ERRORS and errors[-1]["message"] == "boom 59"
+    assert "the viewer reported an error: boom 59" in caplog.text
+
+
+def test_malformed_reports_are_ignored(make_widget):
+    view = make_widget()
+    for content in ("text", None, {"type": "report"}, {"type": "report", "kind": "state", "data": "x"},
+                    {"type": "report", "kind": "error", "data": 5}, {"type": "report", "kind": "other", "data": {}}):
+        view._on_page_message(view, content, [])
+    assert view.diagnostics == {"state": {}, "errors": []}
+
+
+def test_the_handle_exposes_the_diagnostics_and_a_server_viewer_has_none(notebook):
+    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        handle.widget._on_page_message(handle.widget, {"type": "report", "kind": "state", "data": {"pixelRatio": 2}}, [])
+        assert handle.diagnostics()["state"] == {"pixelRatio": 2}
+    finally:
+        handle.close()
+    plain = launcher.ShowHandle(ws_port=1, http_port=None, thread=None, _stop=lambda: None)
+    assert plain.diagnostics() == {}

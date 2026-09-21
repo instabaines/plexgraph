@@ -143,9 +143,11 @@ if (!wsPort) {
   let tools: ReturnType<typeof mountTools> | null = null;
   let appearance: ReturnType<typeof mountAppearance> | null = null;
   let timeUnit: "epoch_seconds" | null = null;
+  let reportSoon: () => void = () => {}; // set below, when the viewer is inside a notebook widget
   const handle = mountViewer(canvas, wsAddress, {
     ...style,
     onGraphLoaded: () => {
+      reportSoon();
       tools?.graphLoaded();
       appearance?.graphLoaded();
       timeUnit = handle.getGraphInfo().timeUnit;
@@ -166,7 +168,7 @@ if (!wsPort) {
       setStatus(connectionStatus);
     },
     onClose: () => {
-      connectionStatus = `disconnected (${wsUrl})`;
+      connectionStatus = wsUrl === PARENT_TRANSPORT ? "closed: this viewer no longer updates" : `disconnected (${wsUrl})`;
       setStatus(connectionStatus);
     },
     onError: () => {
@@ -307,6 +309,43 @@ if (!wsPort) {
   // Exposed for local debugging / automated visual verification only —
   // not part of the public viz-core API surface.
   (window as unknown as { __plexgraphHandle: typeof handle }).__plexgraphHandle = handle;
+
+  // Inside a notebook widget the viewer tells the kernel what it sees and what goes wrong, so a blank or misdrawn viewer
+  // can be diagnosed from Python (`handle.widget.diagnostics`) instead of from a browser console that may not be reachable.
+  if (wsUrl === PARENT_TRANSPORT) {
+    const report = (kind: string, data: unknown): void => window.parent.postMessage({ plexgraph: "report", kind, data }, "*");
+    const snapshot = (): void => {
+      const gl = (canvas.getContext("webgl2") || canvas.getContext("webgl")) as WebGLRenderingContext | null;
+      const debug = gl?.getExtension("WEBGL_debug_renderer_info");
+      report("state", {
+        userAgent: navigator.userAgent,
+        pixelRatio: window.devicePixelRatio,
+        window: [window.innerWidth, window.innerHeight],
+        canvas: { css: [canvas.clientWidth, canvas.clientHeight], pixels: [canvas.width, canvas.height] },
+        graph: handle.getGraphInfo(),
+        lod: handle.getLodState(),
+        status: statusEl.textContent,
+        gl: gl ? {
+          lost: gl.isContextLost(), viewport: Array.from(gl.getParameter(gl.VIEWPORT) as Int32Array),
+          renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+        } : null,
+      });
+    };
+    window.addEventListener("error", (e) => report("error", { message: e.message, file: e.filename, line: e.lineno }));
+    window.addEventListener("unhandledrejection", (e) => report("error", { message: String((e.reason && e.reason.message) || e.reason) }));
+    const consoleError = console.error.bind(console);
+    console.error = (...args: unknown[]) => { consoleError(...args); report("error", { message: args.map(String).join(" ") }); };
+    // Reported when the graph has arrived and again once its layout has had time to settle, and whenever the canvas changes
+    // size (the case that has gone wrong before). A large graph can take several seconds to arrive, so the snapshot follows
+    // the graph loading rather than the page loading.
+    let timers: number[] = [];
+    reportSoon = (): void => {
+      timers.forEach((t) => window.clearTimeout(t));
+      timers = [window.setTimeout(snapshot, 1500), window.setTimeout(snapshot, 8000)];
+    };
+    new ResizeObserver(() => reportSoon()).observe(canvas);
+    reportSoon();
+  }
 
   function applyTimeFilter(): void {
     const t = Number(timelineSlider.value);
