@@ -98,24 +98,22 @@ def _display_inline(url: str, *, width: int, height: int) -> None:
     display(IFrame(src=url, width=width, height=height))
 
 
-def _colab_proxy_url(port: int) -> str:
-    """The address at which the Colab browser can reach a port of the kernel's machine."""
+def _colab_viewer_path(style: dict[str, Any]) -> str:
+    """The path (with query) the Colab iframe opens. One port serves both the viewer page and its WebSocket, so the
+    two share an origin: a second proxied port is a different origin and Colab refuses the socket. The viewer is
+    told `ws=same-origin` and works out the address for itself, because the proxied host name is Colab's to choose."""
+    path = "/?ws=same-origin"
+    if style:
+        path += f"&style={urllib.parse.quote(json.dumps(style))}"
+    return path
+
+
+def _display_colab(port: int, path: str, *, height: int) -> None:
+    """Show the viewer in the cell output through Colab's own port-forwarding call. Other ways of building the
+    address (`google.colab.kernel.proxyPort`) point at a different proxy that does not carry WebSockets."""
     from google.colab import output  # type: ignore[import-not-found]
 
-    return str(output.eval_js(f"google.colab.kernel.proxyPort({port}, {{'cache': true}})")).rstrip("/")
-
-
-def _colab_viewer_url(port: int, style: dict[str, Any]) -> str:
-    """Colab kernels run on a remote machine, so `localhost` in the iframe would be the user's own computer. The
-    viewer is reached through Colab's port proxy instead. One port serves both the page and the WebSocket, so the
-    two share an origin (a second proxied port is a different origin and is refused). The viewer is given the
-    WebSocket address in full (`?ws=wss://...`) rather than as a port number."""
-    web = _colab_proxy_url(port)
-    socket = "wss://" + web.split("://", 1)[-1]
-    url = f"{web}/?ws={urllib.parse.quote(socket, safe='')}"
-    if style:
-        url += f"&style={urllib.parse.quote(json.dumps(style))}"
-    return url
+    output.serve_kernel_port_as_iframe(port, path=path, width="100%", height=str(height))
 
 
 # Python-friendly (snake_case) names for the subset of viz-core's
@@ -427,7 +425,7 @@ def show(
         block = True
 
     app_dir = _static_app_dir()
-    single_port = notebook == "colab" and app_dir.exists()  # see _colab_viewer_url
+    single_port = notebook == "colab" and app_dir.exists()  # see _colab_viewer_path
 
     ready = threading.Event()
     bound_ws_port: list[int] = []
@@ -488,10 +486,12 @@ def show(
     url = None
     if actual_http_port is not None:
         if notebook == "colab":
-            url = _colab_viewer_url(actual_ws_port, style)
+            url = _colab_viewer_path(style)  # relative to Colab's proxy, which only Colab can name
+            logger.info("displaying in Colab: %s", url)
+            _display_colab(actual_ws_port, url, height=height)
         else:
             url = _viewer_url(host, actual_http_port, actual_ws_port, style)
-        if in_jupyter:
+        if notebook == "jupyter":
             logger.info("displaying inline: %s", url)
             _display_inline(url, width=width, height=height)
         elif open_browser:

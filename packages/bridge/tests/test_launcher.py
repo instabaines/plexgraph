@@ -203,22 +203,17 @@ _ColabShell.__module__ = "google.colab._shell"
 
 @pytest.fixture
 def colab(monkeypatch):
-    """Pretend to be a Colab kernel: its shell class, and a port proxy that answers like Colab's."""
+    """Pretend to be a Colab kernel: its shell class, and the call Colab provides for showing a kernel port."""
     import IPython
 
     monkeypatch.setattr(IPython, "get_ipython", lambda: _ColabShell())
-    asked = []
-
-    def eval_js(code):
-        asked.append(code)
-        port = int(code.split("proxyPort(")[1].split(",")[0])
-        return f"https://{port}-abc123.colab.example/"
-
+    framed = []
     module = types.ModuleType("google.colab")
-    module.output = types.SimpleNamespace(eval_js=eval_js)
+    module.output = types.SimpleNamespace(
+        serve_kernel_port_as_iframe=lambda port, path="/", width="100%", height="400": framed.append((port, path, width, height)))
     monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
     monkeypatch.setitem(sys.modules, "google.colab", module)
-    return asked
+    return framed
 
 
 def test_colab_is_recognised_as_a_notebook_and_not_as_plain_jupyter(colab):
@@ -226,19 +221,15 @@ def test_colab_is_recognised_as_a_notebook_and_not_as_plain_jupyter(colab):
     assert _in_jupyter() is True
 
 
-def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_from_one_proxied_port(colab, monkeypatch):
-    opened, shown = [], []
+def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_from_one_port(colab, monkeypatch):
+    opened, inline = [], []
     monkeypatch.setattr(launcher.webbrowser, "open", lambda url: opened.append(url))
-    monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: shown.append(url))
-    handle = show(_small_graph(), layout_iterations=2, return_handle=True)  # would hang forever if it blocked
+    monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: inline.append(url))
+    handle = show(_small_graph(), layout_iterations=2, height=480, return_handle=True)  # would hang forever if it blocked
     try:
-        assert opened == []
-        assert len(shown) == 1 and shown[0] == handle.url
+        assert opened == [] and inline == []
         assert handle.http_port == handle.ws_port  # a second proxied port would be a different origin
-        web, query = handle.url.split("/?", 1)
-        assert web == f"https://{handle.ws_port}-abc123.colab.example"
-        assert urllib.parse.parse_qs(query)["ws"][0] == f"wss://{handle.ws_port}-abc123.colab.example"
-        assert len(colab) == 1
+        assert colab == [(handle.ws_port, "/?ws=same-origin", "100%", "480")]
         # the page really is served by that port
         page = urllib.request.urlopen(f"http://localhost:{handle.ws_port}/").read().decode()
         assert "<title>plexgraph</title>" in page
@@ -246,6 +237,7 @@ def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_fr
         handle.close()
 
 
-def test_colab_url_carries_the_style(colab):
-    url = launcher._colab_viewer_url(8000, {"nodeColor": [1, 0, 0, 1]})
-    assert url.startswith("https://8000-abc123.colab.example/?ws=wss%3A%2F%2F8000-abc123.colab.example&style=")
+def test_colab_path_carries_the_style():
+    path = launcher._colab_viewer_path({"nodeColor": [1, 0, 0, 1]})
+    assert path.startswith("/?ws=same-origin&style=")
+    assert launcher._colab_viewer_path({}) == "/?ws=same-origin"

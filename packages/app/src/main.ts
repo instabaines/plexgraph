@@ -107,8 +107,11 @@ function setStatus(text: string): void {
 if (!wsPort) {
   setStatus("no ?ws=<port> in URL — nothing to connect to");
 } else {
-  // ?ws= is normally a port on this host; a full ws:// or wss:// address is used as given (remote notebooks such as Colab).
-  const wsUrl = /^wss?:\/\//.test(wsPort) ? wsPort : `ws://${wsHost}:${wsPort}`;
+  // ?ws= is normally a port on this host. `same-origin` means the server that served this page (a remote notebook
+  // forwards one port for both); a full ws:// or wss:// address is used as given.
+  const wsUrl = wsPort === "same-origin"
+    ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/`
+    : /^wss?:\/\//.test(wsPort) ? wsPort : `ws://${wsHost}:${wsPort}`;
   // Idle/connected state shows nothing (no "connected (ws://host:port)"
   // clutter — it's debug info, not something a viewer or an exported
   // image should carry) — only genuinely useful states (an error, or the
@@ -152,11 +155,11 @@ if (!wsPort) {
       setStatus(connectionStatus);
     },
     onClose: () => {
-      connectionStatus = "disconnected";
+      connectionStatus = `disconnected (${wsUrl})`;
       setStatus(connectionStatus);
     },
     onError: () => {
-      connectionStatus = "connection error";
+      connectionStatus = `connection error (${wsUrl})`;
       setStatus(connectionStatus);
     },
     onHover: (nodeId) => {

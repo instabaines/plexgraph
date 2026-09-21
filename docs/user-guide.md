@@ -341,10 +341,10 @@ installed otherwise.
   without rerunning the cell, and won't work over remote Jupyter (JupyterHub, Binder, SSH-forwarded
   kernels) without port-forwarding. A real anywidget integration is a reasonable future upgrade (see
   [`docs/architecture/plan.md`](architecture/plan.md)) but isn't built yet.
-- **Google Colab** is detected separately. Its kernel runs on a remote machine, so `show()` asks Colab's port
-  proxy for the address of a single port that serves both the page and the WebSocket, and hands the viewer the
-  `wss://` address in full.
-  If the viewer stays blank there, `handle.url` (with `return_handle=True`) is the address it was given.
+- **Google Colab** is detected separately. Its kernel runs on a remote machine, so `show()` serves the viewer page
+  and its WebSocket from a single port and shows that port with Colab's own `serve_kernel_port_as_iframe`. Colab
+  treats a second forwarded port as a different origin and refuses the socket, which is why there is only one.
+  If the viewer says `disconnected (...)`, the address in brackets is where it tried to connect.
 - Use `width`/`height` to control the iframe's size (defaults 900x600).
 
 ## Scale and performance

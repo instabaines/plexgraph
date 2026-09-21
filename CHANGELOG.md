@@ -8,10 +8,12 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 ### Fixed
 - `show()` in Google Colab blocked forever and displayed nothing: Colab was not recognised as a notebook (its shell
   is not a `ZMQInteractiveShell`), so the call waited on a browser that a remote machine cannot open. Colab is now
-  detected, `show()` returns immediately, and the viewer is reached through Colab's port proxy. One port serves both the
-  viewer page and its WebSocket there, because Colab treats a second proxied port as a different origin and refuses it.
+  detected, `show()` returns immediately, and the viewer is shown through Colab's `serve_kernel_port_as_iframe`. One port
+  serves both the viewer page and its WebSocket there, because Colab treats a second forwarded port as a different
+  origin and refuses it.
 - The bridge declared `websockets>=12`, but it uses the `websockets.asyncio` API, which needs 13 or newer.
-- The viewer accepts a full `ws://` or `wss://` address in `?ws=`, not only a port number.
+- The viewer accepts `?ws=same-origin` (the server that served the page) or a full `ws://`/`wss://` address, not only a
+  port number, and its `disconnected`/`connection error` messages now say which address it tried.
 
 ## [0.1.0]
 
