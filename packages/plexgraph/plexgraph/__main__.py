@@ -17,12 +17,14 @@ def _info() -> int:
     print(f"python    {sys.version.split()[0]}")
     print(f"location  {Path(plexgraph.__file__).parent}")
     print(f"viewer    {'bundled' if viewer else 'MISSING'} ({static})")
-    for name in ("numpy", "msgpack", "websockets", "pandas", "networkx", "IPython"):
+    optional = {"pandas": "", "networkx": "", "IPython": "",
+                "anywidget": ' (the notebook widget; without it notebooks use a local server: pip install "plexgraph[jupyter]")'}
+    for name in ("numpy", "msgpack", "websockets", *optional):
         try:
             module = __import__(name)
             print(f"{name:<9} {getattr(module, '__version__', 'installed')}")
         except ImportError:
-            print(f"{name:<9} not installed" + ("" if name in ("pandas", "networkx", "IPython") else "  <-- required"))
+            print(f"{name:<9} not installed" + (optional[name] if name in optional else "  <-- required"))
     return 0 if viewer else 1
 
 

@@ -6,8 +6,10 @@ import urllib.request
 import msgpack
 import pytest
 import websockets
+from websockets.asyncio.client import connect as ws_connect  # the new client, which every supported version has
 
 from plexgraph_bridge import launcher
+from plexgraph_bridge.server import BridgeServer
 from plexgraph_bridge.launcher import _build_style_dict, _in_jupyter, _notebook_kind, _viewer_url, show
 from plexgraph_core.model.ir import Graph
 
@@ -43,7 +45,7 @@ async def test_show_serves_static_app_and_streams_graph():
         html = resp.read().decode()
     assert "<title>plexgraph</title>" in html
 
-    async with websockets.connect(handle.ws_url) as ws:
+    async with ws_connect(handle.ws_url) as ws:
         first = msgpack.unpackb(await ws.recv(), raw=False)
         assert first["type"] == "graph"
         assert len(first["nodes"]) == 6
@@ -227,12 +229,12 @@ def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_fr
     monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: inline.append(url))
     bound = []
 
-    class Recording(launcher.BridgeServer):
+    class Recording(BridgeServer):
         def __init__(self, *args, **kwargs):
             bound.append(kwargs["host"])
             super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr(launcher, "BridgeServer", Recording)
+    monkeypatch.setattr("plexgraph_bridge.server.BridgeServer", Recording)  # show() imports it when it needs it
     handle = show(_small_graph(), widget=False, layout_iterations=2, height=480, return_handle=True)  # would hang forever if it blocked
     try:
         assert opened == [] and inline == []

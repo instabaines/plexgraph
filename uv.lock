@@ -2082,7 +2082,6 @@ name = "plexgraph-bridge"
 version = "0.1.1"
 source = { editable = "packages/bridge" }
 dependencies = [
-    { name = "anywidget" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "plexgraph-core" },
@@ -2091,6 +2090,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "anywidget" },
     { name = "ipykernel" },
     { name = "ipython" },
     { name = "jupyter-client" },
@@ -2101,15 +2101,15 @@ dev = [
     { name = "pytest-asyncio" },
 ]
 jupyter = [
-    { name = "ipython" },
+    { name = "anywidget" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "anywidget", specifier = ">=0.9" },
+    { name = "anywidget", marker = "extra == 'dev'", specifier = ">=0.9" },
+    { name = "anywidget", marker = "extra == 'jupyter'", specifier = ">=0.9" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "ipython", marker = "extra == 'dev'" },
-    { name = "ipython", marker = "extra == 'jupyter'" },
     { name = "jupyter-client", marker = "extra == 'dev'" },
     { name = "jupyterlab", marker = "extra == 'dev'" },
     { name = "nbclient", marker = "extra == 'dev'" },

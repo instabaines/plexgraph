@@ -1,5 +1,6 @@
+from typing import TYPE_CHECKING, Any
+
 from plexgraph_bridge.launcher import show
-from plexgraph_bridge.server import BridgeServer
 from plexgraph_bridge.style import (
     COLORMAPS,
     PALETTES,
@@ -18,6 +19,20 @@ from plexgraph_bridge.style import (
     size_by_time,
     size_by_weight,
 )
+
+if TYPE_CHECKING:
+    from plexgraph_bridge.server import BridgeServer
+
+
+def __getattr__(name: str) -> Any:
+    # The WebSocket server needs the `websockets` package, which the notebook widget does not. It is imported when it is
+    # asked for, so that `import plexgraph` and the widget work in an environment that has not installed it.
+    if name == "BridgeServer":
+        from plexgraph_bridge.server import BridgeServer
+
+        return BridgeServer
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "show",

@@ -80,3 +80,83 @@ def test_release_metadata_lists_every_python_the_ci_matrix_tests():
     ci = (REPO / ".github/workflows/ci.yml").read_text()
     for minor in re.findall(r"Programming Language :: Python :: (3\.\d+)", text):
         assert f'"{minor}"' in ci, f"Python {minor} is a classifier but is not in the CI matrix"
+
+
+def _run(code: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+
+
+def test_importing_plexgraph_does_not_load_the_notebook_stack_or_the_socket_library():
+    # A hosted notebook manages ipywidgets, IPython and traitlets itself: importing us must not touch them.
+    result = _run("import sys, plexgraph\n"
+                  "loaded = [m for m in ('anywidget', 'ipywidgets', 'IPython', 'traitlets', 'websockets') if m in sys.modules]\n"
+                  "print(loaded)\n")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "[]", result.stdout
+
+
+def test_the_widget_route_works_without_the_websockets_package():
+    # `pip install --no-deps` into a locked-down environment: the widget never needs a socket.
+    result = _run("import sys\n"
+                  "sys.modules['websockets'] = None  # importing it now raises ImportError\n"
+                  "import IPython, IPython.display\n"
+                  "class Shell: pass\n"
+                  "Shell.__name__ = 'ZMQInteractiveShell'\n"
+                  "IPython.get_ipython = lambda: Shell()\n"
+                  "shown = []\n"
+                  "IPython.display.display = lambda obj, *a, **k: shown.append(obj)\n"
+                  "import plexgraph as pg\n"
+                  "g = pg.Graph(); g.add_node('a'); g.add_node('b'); g.add_edge('a', 'b')\n"
+                  "h = pg.show(g, layout_iterations=1, return_handle=True, node_color='red')\n"
+                  "h.color_nodes(['a'], 'blue')\n"
+                  "print(type(h.widget).__name__, len(shown), 'websockets' in sys.modules and sys.modules['websockets'] is not None)\n"
+                  "h.close()\n")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["GraphWidget", "1", "False"], result.stdout
+
+
+def test_the_server_route_without_websockets_says_what_to_install():
+    result = _run("import sys\n"
+                  "sys.modules['websockets'] = None\n"
+                  "import plexgraph as pg\n"
+                  "g = pg.Graph(); g.add_node('a'); g.add_node('b'); g.add_edge('a', 'b')\n"
+                  "try:\n"
+                  "    pg.show(g, open_browser=False, block=False, layout_iterations=1)\n"
+                  "except ImportError as e:\n"
+                  "    print('ImportError', 'websockets' in str(e), 'plexgraph[jupyter]' in str(e))\n")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["ImportError", "True", "True"], result.stdout + result.stderr
+
+
+def _first_python_block(text: str) -> str:
+    return re.search(r"```python\n(.*?)```", text, re.S).group(1)
+
+
+@pytest.fixture
+def quiet_show(monkeypatch):
+    """`pg.show` that starts the viewer without opening a browser or blocking, and closes it afterwards."""
+    real, opened = pg.show, []
+
+    def show(graph, **options):
+        wanted = options.pop("return_handle", False)  # what the example asked for; the test always needs the handle to close
+        handle = real(graph, **{"open_browser": False, "block": False, "layout_iterations": 1, **options, "return_handle": True})
+        opened.append(handle)
+        return handle if wanted else None
+
+    monkeypatch.setattr(pg, "show", show)
+    yield opened
+    for handle in opened:
+        handle.close()
+
+
+@pytest.mark.parametrize("source", ["README.md", "packaging/README.md"])
+def test_the_first_example_in_each_readme_runs_as_written(source, quiet_show):
+    root = Path(__file__).resolve().parents[3]
+    exec(compile(_first_python_block((root / source).read_text(encoding="utf-8")), source, "exec"), {})
+    assert quiet_show, f"the example in {source} never called show()"
+
+
+def test_the_example_in_the_package_docstring_runs_as_written(quiet_show):
+    code = "\n".join(line[4:] for line in pg.__doc__.splitlines() if line.startswith("    "))
+    exec(compile(code, "plexgraph.__doc__", "exec"), {})
+    assert quiet_show

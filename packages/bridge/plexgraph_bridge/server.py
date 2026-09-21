@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import websockets
-from websockets.asyncio.server import Server, ServerConnection
+from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.datastructures import Headers
 from websockets.http11 import Request, Response
 
@@ -95,8 +95,9 @@ class BridgeServer(ClientHub):
     async def start(self) -> int:
         """Start listening and return the bound port."""
         self._loop = asyncio.get_running_loop()
-        self._server = await websockets.serve(self._handle_connection, self.host, self.port,
-                                              process_request=self._process_request)
+        # `serve` from websockets.asyncio.server, not `websockets.serve`: before version 14 the latter is the older
+        # implementation, which has a different request hook and would not work with this code.
+        self._server = await serve(self._handle_connection, self.host, self.port, process_request=self._process_request)
         bound_port = self._server.sockets[0].getsockname()[1]
         self.port = bound_port
         logger.info("bridge server listening on ws://%s:%d", self.host, bound_port)

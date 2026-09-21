@@ -27,13 +27,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 SMOKE = r'''
 import json, os, re, subprocess, sys, urllib.request
-import msgpack
-from websockets.sync.client import connect
 
 import plexgraph as pg
 import plexgraph_bridge, plexgraph_core
 from plexgraph_bridge import show as implementation_show
 from plexgraph_core import Graph as ImplementationGraph
+
+# a hosted notebook manages these itself: importing plexgraph must not load them (checked before this script imports any)
+heavy = [m for m in ("anywidget", "ipywidgets", "IPython", "traitlets", "websockets") if m in sys.modules]
+assert not heavy, f"import plexgraph loaded {heavy}"
+import msgpack
+from websockets.sync.client import connect
 
 expected = sys.argv[1]
 report = {}
@@ -86,16 +90,6 @@ try:
 finally:
     handle.close()
 
-# the notebook widget: the installed package holds the viewer inside the script the browser is sent
-from plexgraph_bridge.widget import GraphWidget, _host_script
-script = _host_script()
-assert "<canvas" in script and "__APP_HTML__" not in script and len(script) > 100_000, len(script)
-view = GraphWidget(g, layout_iterations=2)
-try:
-    assert view.viewer_query == "?ws=parent"
-finally:
-    view.close()
-
 # optional dependencies fail clearly, and named errors are useful
 try:
     pg.from_networkx(object())
@@ -115,6 +109,36 @@ g2 = pg.from_temporal_edgelist([("a", "b", "2024-01-01"), ("b", "c", "2024-01-02
 assert g2.time_unit == "epoch_seconds"
 print(json.dumps(report))
 '''
+
+
+WIDGET_SMOKE = r"""
+import sys
+import IPython, IPython.display
+class Shell:  # what a Jupyter kernel's shell looks like to plexgraph
+    pass
+Shell.__name__ = "ZMQInteractiveShell"
+IPython.get_ipython = lambda: Shell()
+shown = []
+IPython.display.display = lambda obj, *a, **k: shown.append(obj)
+
+import plexgraph as pg
+from plexgraph_bridge.widget import GraphWidget, _host_script
+script = _host_script()
+assert "<canvas" in script and "__APP_HTML__" not in script and len(script) > 100_000, len(script)  # the viewer is inside
+g = pg.Graph()
+for i in range(20): g.add_node(i)
+for i in range(20): g.add_edge(i, (i + 1) % 20)
+handle = pg.show(g, layout_iterations=2, return_handle=True, node_color="tomato")
+try:
+    assert isinstance(handle.widget, GraphWidget) and shown == [handle.widget] and handle.ws_port is None
+    handle.color_nodes([0], "navy")
+finally:
+    handle.close()
+if len(sys.argv) > 1 and sys.argv[1] == "no-websockets":
+    import importlib.util
+    assert importlib.util.find_spec("websockets") is None, "this check is meant to run without websockets"
+print("widget ok")
+"""
 
 
 def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -172,6 +196,34 @@ def smoke(artifact: Path, version: str, workdir: Path, extra_pip: list[str]) -> 
     if result.returncode:
         return False, "smoke test failed:\n" + (result.stdout + result.stderr)[-2500:]
     return True, result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+
+
+def widget_smoke(artifact: Path, workdir: Path) -> tuple[bool, str]:
+    """The `[jupyter]` extra: the same environment, plus anywidget, and the widget must work."""
+    python = venv_python(workdir / "venv")
+    installed = run([str(python), "-m", "pip", "install", "--quiet", "--disable-pip-version-check", f"{artifact}[jupyter]"])
+    if installed.returncode:
+        return False, "pip install with the jupyter extra failed:\n" + (installed.stdout + installed.stderr)[-2000:]
+    result = run([str(python), "-c", WIDGET_SMOKE], cwd=workdir / "empty", timeout=180)
+    return result.returncode == 0 and "widget ok" in result.stdout, (result.stdout + result.stderr)[-2000:]
+
+
+def no_dependencies_smoke(artifact: Path, workdir: Path) -> tuple[bool, str]:
+    """The way into an environment that manages its own packages (Colab, Kaggle, Databricks): install plexgraph with
+    `--no-deps`, add only what the widget needs, and there is no websockets package in the environment at all."""
+    environment = workdir / "venv-nodeps"
+    created = run([sys.executable, "-m", "venv", str(environment)])
+    if created.returncode:
+        return False, "could not create a virtual environment:\n" + created.stderr
+    python = venv_python(environment)
+    pip = [str(python), "-m", "pip", "install", "--quiet", "--disable-pip-version-check"]
+    for command in ([*pip, "--no-deps", str(artifact)], [*pip, "numpy", "msgpack", "anywidget", "ipython"]):
+        installed = run(command)
+        if installed.returncode:
+            return False, "pip install failed:\n" + (installed.stdout + installed.stderr)[-2000:]
+    (workdir / "empty").mkdir(exist_ok=True)
+    result = run([str(python), "-c", WIDGET_SMOKE, "no-websockets"], cwd=workdir / "empty", timeout=180)
+    return result.returncode == 0 and "widget ok" in result.stdout, (result.stdout + result.stderr)[-2000:]
 
 
 def browser_check(artifact: Path, workdir: Path) -> tuple[bool, str]:
@@ -236,6 +288,11 @@ def main() -> int:
             workdir = Path(tmp)
             ok, detail = smoke(artifact, version, workdir, [])
             report(f"install {kind} in a clean environment and use it", ok, detail)
+            if ok and kind == "wheel":
+                ok_widget, detail = widget_smoke(artifact, workdir)
+                report("the notebook widget works with the [jupyter] extra", ok_widget, detail)
+                ok_bare, detail = no_dependencies_smoke(artifact, workdir)
+                report("the widget works with --no-deps and no websockets package", ok_bare, detail)
             if ok and args.browser and kind == "wheel":
                 ok, detail = browser_check(artifact, workdir)
                 report("render the installed viewer in Chrome", ok, detail)

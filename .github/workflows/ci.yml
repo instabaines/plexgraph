@@ -58,6 +58,23 @@ jobs:
       - name: Test
         run: python -m pytest packages -q
 
+  oldest-websockets:
+    name: Oldest supported websockets (13.1)
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-dist
+          path: packages/app/dist
+      - run: pip install -e "packages/core[all,dev]" -e "packages/bridge[dev]" -e packages/plexgraph "websockets==13.1"
+      - run: python -m pytest packages/bridge -q
+
   types:
     name: Type check
     needs: frontend

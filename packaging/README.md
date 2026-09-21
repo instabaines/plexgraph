@@ -6,7 +6,8 @@ with 100,000 nodes and hundreds of thousands of edges.
 
 ```sh
 pip install plexgraph            # everything needed, including the viewer; no Node.js required
-pip install "plexgraph[all]"     # plus pandas, networkx and IPython support
+pip install "plexgraph[jupyter]" # plus the notebook widget (anywidget)
+pip install "plexgraph[all]"     # plus pandas, networkx and the notebook widget
 ```
 
 ```python

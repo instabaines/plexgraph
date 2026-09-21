@@ -30,7 +30,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from plexgraph_bridge.color import parse_color
-from plexgraph_bridge.server import BridgeServer
 from plexgraph_bridge.style import StyleController
 from plexgraph_core.model.ir import Graph
 
@@ -133,7 +132,7 @@ def _colab_viewer_path(style: dict[str, Any], token: str | None = None) -> str:
 def _widget_available() -> bool:
     try:
         import anywidget  # noqa: F401
-    except ImportError:
+    except Exception:  # not installed, or installed against a notebook stack it cannot work with
         return False
     return True
 
@@ -376,10 +375,11 @@ def show(
       frontends that run widgets): shows the viewer as a widget in the cell
       output. Everything travels over the notebook's own connection, so no
       server or port is involved and it works on hosted notebooks too. It
-      never blocks the kernel. This needs the `anywidget` package (installed
-      with plexgraph); pass `widget=False` to use the older way instead: a
-      small local web server embedded in an `<iframe>`, which only works
-      where your browser can reach the machine running Python.
+      never blocks the kernel. This needs the `anywidget` package
+      (`pip install "plexgraph[jupyter]"`); without it, or with `widget=False`,
+      the older way is used instead: a small local web server embedded in an
+      `<iframe>`, which only works where your browser can reach the machine
+      running Python.
     - **Everywhere else**: opens a system browser tab (unless
       open_browser=False), and blocks the calling thread by default so the
       process stays alive to keep serving — pass block=False to run the
@@ -477,12 +477,21 @@ def show(
     notebook = _notebook_kind()
     if notebook is not None:
         if widget and not _widget_available():
-            raise ImportError("show(widget=True) needs the anywidget package: pip install anywidget")
+            raise ImportError('show(widget=True) needs the anywidget package: pip install "plexgraph[jupyter]"')
+        asked_for_widget = bool(widget)
         if widget is None:
             widget = _widget_available()
         if widget:
-            return _show_widget(graph, controller, style, notebook=notebook, layout_iterations=layout_iterations,
-                                seed=seed, height=height, return_handle=return_handle)
+            try:
+                return _show_widget(graph, controller, style, notebook=notebook, layout_iterations=layout_iterations,
+                                    seed=seed, height=height, return_handle=return_handle)
+            except Exception as error:
+                if asked_for_widget:
+                    raise
+                # anywidget is installed but does not work with this notebook's own widget packages: fall back to the
+                # local-server route rather than fail, and say why.
+                warnings.warn(f"the notebook widget could not be created ({type(error).__name__}: {error}); showing "
+                              "the viewer from a local server instead.", RuntimeWarning, stacklevel=2)
     in_jupyter = notebook is not None
     if in_jupyter:
         block = False
@@ -499,6 +508,12 @@ def show(
         # is what the proxy needs (it is also what Colab's own examples do).
         host = "0.0.0.0"
 
+    try:
+        import websockets  # noqa: F401
+    except ImportError:
+        raise ImportError('showing the viewer in a browser tab needs the websockets package: pip install "websockets>=13". '
+                          "(In a notebook, the widget does not need it: pip install \"plexgraph[jupyter]\".)") from None
+
     ready = threading.Event()
     bound_ws_port: list[int] = []
     stop_bridge: list[Callable[[], Any]] = []
@@ -508,6 +523,9 @@ def show(
         asyncio.set_event_loop(loop)
 
         async def _main() -> None:
+            # imported here: the widget route never needs the websockets package
+            from plexgraph_bridge.server import BridgeServer
+
             server = BridgeServer(
                 graph,
                 host=host,
@@ -570,7 +588,8 @@ def show(
                 warnings.warn(
                     f"This looks like {hosted}. The viewer is served from the notebook's machine on ports "
                     f"{actual_http_port} and {actual_ws_port}, which your browser can only reach if the host forwards "
-                    "them, so the frame below may stay blank. See 'Where it runs' in the user guide.",
+                    "them, so the frame below may stay blank. A viewer that needs no ports is available: "
+                    "%pip install \"plexgraph[jupyter]\", then restart the kernel. See 'Where it runs' in the user guide.",
                     RuntimeWarning, stacklevel=2)
             if notebook == "jupyter":
                 logger.info("displaying inline: %s", url)

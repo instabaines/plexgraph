@@ -335,7 +335,8 @@ installed otherwise.
 
 ## Where it runs
 
-In a notebook `show()` displays the viewer as a **widget** (built on [anywidget](https://anywidget.dev/)): the graph and
+In a notebook, with [anywidget](https://anywidget.dev/) installed (`pip install "plexgraph[jupyter]"`), `show()` displays
+the viewer as a **widget**: the graph and
 its layout travel over the notebook's own connection, so no server or port is involved, nothing has to be reachable
 from your browser, and there is nothing for another web page to connect to. Outside a notebook it opens a browser tab
 served from a small local server. This is what has and has not been checked:
@@ -359,8 +360,15 @@ hosted notebook it can leave a blank frame (`show()` warns on Kaggle, JupyterHub
   that calling it as a cell's last line does not print anything under the graph. `show(g, return_handle=True)` returns a
   handle with `style()`, `color_nodes()`, `reset_style()`, `close()` and, in a notebook, `widget`, the
   `GraphWidget` itself, which you can place in a layout of your own.
-- `pip install plexgraph` brings in `anywidget`, which the widget needs. Without it `show()` falls back to the older
-  iframe route; `show(g, widget=True)` insists on the widget and says how to install it.
+- The widget needs `anywidget`, which is an extra: `pip install "plexgraph[jupyter]"` (in a notebook, `%pip install ...`
+  and then restart the kernel). Without it `show()` uses the older iframe route; `show(g, widget=True)` insists on the
+  widget and says how to install it. If `anywidget` is installed but cannot work with the notebook's own widget
+  packages, `show()` warns and uses the iframe route instead of failing.
+- **Hosted notebooks (Colab, Kaggle, Databricks) manage their own packages.** Installing `plexgraph[jupyter]` there
+  adds only `anywidget` and `psygnal`; it does not touch IPython, ipywidgets, traitlets or numpy. The one package it can
+  replace is `websockets`, if the environment ships a version older than 13 (plexgraph needs 13 or newer for the
+  browser-tab viewer). Where you want no changes at all, `pip install --no-deps plexgraph anywidget psygnal` installs
+  just those three: the widget does not import `websockets`, and the release checks run it that way.
 - Running the cell again, or scrolling a notebook so the output is unloaded and loaded again, rebuilds the viewer, and
   the kernel streams the graph to it again with the current style. A saved notebook that is reopened while its kernel is
   still running does the same.
@@ -481,7 +489,8 @@ Worth knowing about rather than discovering by surprise:
 - **SVG/HTML export follows the same rule as the live stacked view**: arrows and hyperedge hulls
   only export in the flat view. The stacked view's own elements (planes, threads, per-slice edges)
   export correctly.
-- **Jupyter integration is the iframe stopgap** described above, not a full anywidget integration.
+- **The notebook widget is verified in JupyterLab only.** Other notebook frontends (Colab, VS Code, Notebook 7 and the
+  hosted services) should work but are listed above as not verified.
 
 ### Aligned slice layouts
 

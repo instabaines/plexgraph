@@ -276,7 +276,7 @@ def test_widget_false_uses_the_older_server_and_iframe(notebook, monkeypatch):
 
 def test_asking_for_the_widget_without_anywidget_says_how_to_get_it(notebook, monkeypatch):
     monkeypatch.setattr(launcher, "_widget_available", lambda: False)
-    with pytest.raises(ImportError, match="pip install anywidget"):
+    with pytest.raises(ImportError, match=r"plexgraph\[jupyter\]"):
         launcher.show(_graph(), widget=True)
 
 
@@ -335,3 +335,54 @@ def test_colab_still_gets_a_widget_if_the_widget_manager_cannot_be_switched_on(m
         assert isinstance(handle.widget, GraphWidget)
     finally:
         handle.close()
+
+
+def test_a_widget_that_cannot_be_created_falls_back_to_the_server_route_and_says_why(notebook, monkeypatch):
+    def broken(*args, **kwargs):
+        raise TypeError("this ipywidgets is too old")
+    monkeypatch.setattr(launcher, "_show_widget", broken)
+    inline = []
+    monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: inline.append(url))
+    with pytest.warns(RuntimeWarning, match=r"could not be created \(TypeError: this ipywidgets is too old\)"):
+        handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        assert handle.widget is None and inline == [handle.url]
+    finally:
+        handle.close()
+
+
+def test_asking_for_the_widget_explicitly_does_not_hide_a_failure(notebook, monkeypatch):
+    def broken(*args, **kwargs):
+        raise TypeError("this ipywidgets is too old")
+    monkeypatch.setattr(launcher, "_show_widget", broken)
+    with pytest.raises(TypeError, match="too old"):
+        launcher.show(_graph(), layout_iterations=1, widget=True)
+
+
+def test_an_installed_anywidget_that_fails_to_import_counts_as_unavailable(monkeypatch):
+    import builtins
+
+    real = builtins.__import__
+
+    def fake(name, *args, **kwargs):
+        if name == "anywidget":
+            raise RuntimeError("incompatible with the ipywidgets in this environment")
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake)
+    assert launcher._widget_available() is False
+
+
+def test_the_hosted_notebook_warning_says_how_to_get_the_widget(monkeypatch):
+    import IPython
+
+    class Shell:
+        pass
+    Shell.__name__ = "ZMQInteractiveShell"
+    monkeypatch.setattr(IPython, "get_ipython", lambda: Shell())
+    monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: None)
+    monkeypatch.setattr(launcher, "_widget_available", lambda: False)
+    monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", "1")
+    with pytest.warns(RuntimeWarning, match=r"plexgraph\[jupyter\]"):
+        handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    handle.close()

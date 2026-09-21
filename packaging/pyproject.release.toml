@@ -33,14 +33,13 @@ dependencies = [
     "numpy>=1.26",
     "msgpack>=1.0",
     "websockets>=13.0",
-    "anywidget>=0.9",
 ]
 
 [project.optional-dependencies]
 pandas = ["pandas>=2.0"]
 networkx = ["networkx>=3.0"]
-jupyter = ["ipython"]
-all = ["pandas>=2.0", "networkx>=3.0", "ipython"]
+jupyter = ["anywidget>=0.9"]
+all = ["pandas>=2.0", "networkx>=3.0", "anywidget>=0.9"]
 
 [project.urls]
 Homepage = "https://github.com/instabaines/plexgraph"

@@ -5,6 +5,7 @@ import msgpack
 import numpy as np
 import pytest
 import websockets
+from websockets.asyncio.client import connect as ws_connect  # the new client, which every supported version has
 
 from plexgraph_bridge import RESET, by_degree, show
 from plexgraph_bridge.style import merge_style
@@ -27,7 +28,7 @@ def start(**kwargs):
 
 
 async def connect(handle):
-    return await websockets.connect(handle.ws_url, max_size=None)
+    return await ws_connect(handle.ws_url, max_size=None)
 
 
 async def collect(ws, until_layout_steps=0, timeout=5.0):

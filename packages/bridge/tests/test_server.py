@@ -4,6 +4,7 @@ import http.client
 import msgpack
 import pytest
 import websockets
+from websockets.asyncio.client import connect as ws_connect  # the new client, which every supported version has
 
 from plexgraph_bridge.server import BridgeServer
 from plexgraph_core.model.ir import Graph
@@ -23,7 +24,7 @@ async def test_client_receives_graph_then_layout_steps():
     server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=5, seed=1)
     port = await server.start()
     try:
-        async with websockets.connect(f"ws://localhost:{port}") as ws:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
             first = msgpack.unpackb(await ws.recv(), raw=False)
             assert first["type"] == "graph"
             assert len(first["nodes"]) == 5
@@ -43,7 +44,7 @@ async def test_layout_streams_until_converged_or_max_iterations():
     server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=5, seed=1)
     port = await server.start()
     try:
-        async with websockets.connect(f"ws://localhost:{port}") as ws:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
             await ws.recv()  # initial graph snapshot
             steps = []
             while True:
@@ -84,7 +85,7 @@ async def test_one_port_serves_the_viewer_and_the_websocket(viewer_dir):
         assert await _get(port, "/") == (200, "text/html", b"<title>viewer</title>")
         status, kind, body = await _get(port, "/assets/app.js?cache=1")
         assert (status, body) == (200, b"console.log(1)") and kind == "text/javascript"
-        async with websockets.connect(f"ws://localhost:{port}") as ws:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
             assert msgpack.unpackb(await ws.recv(), raw=False)["type"] == "graph"
     finally:
         server.close()
@@ -128,7 +129,7 @@ async def test_a_tab_closing_mid_layout_is_not_logged_as_an_error(caplog):
     try:
         with caplog.at_level("ERROR"):
             for _ in range(5):
-                async with websockets.connect(f"ws://localhost:{port}") as ws:
+                async with ws_connect(f"ws://localhost:{port}") as ws:
                     await ws.recv()  # the graph; the layout is still streaming when the tab goes away
                 await asyncio.sleep(0.3)
         assert [r.getMessage() for r in caplog.records] == []
@@ -144,7 +145,7 @@ async def test_with_a_token_a_client_that_lacks_it_is_refused(query):
     port = await server.start()
     try:
         with pytest.raises(websockets.exceptions.InvalidStatus) as refused:
-            async with websockets.connect(f"ws://localhost:{port}/{query}", origin="https://evil.example.com"):
+            async with ws_connect(f"ws://localhost:{port}/{query}", origin="https://evil.example.com"):
                 pass
         assert refused.value.response.status_code == 403
     finally:
@@ -158,7 +159,7 @@ async def test_with_a_token_the_right_one_gets_the_graph_from_any_origin(viewer_
     server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, static_dir=viewer_dir, token="s3cret/+=")
     port = await server.start()
     try:
-        async with websockets.connect(f"ws://localhost:{port}/?token=s3cret%2F%2B%3D", origin="https://proxy.example") as ws:
+        async with ws_connect(f"ws://localhost:{port}/?token=s3cret%2F%2B%3D", origin="https://proxy.example") as ws:
             assert msgpack.unpackb(await ws.recv(), raw=False)["type"] == "graph"
         # the page itself carries no data, so it stays reachable without the token
         assert (await _get(port, "/"))[0] == 200

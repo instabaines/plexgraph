@@ -14,7 +14,9 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   in Colab and would break on any hosted notebook. `show(widget=False)` keeps the older local-server route, and it is
   what `show()` falls back to when `anywidget` is not installed. `show(g, return_handle=True).widget` is the
   `GraphWidget`, for placing in a layout of your own.
-- `anywidget` is now a dependency of `plexgraph`.
+- `anywidget` is an optional extra, `pip install "plexgraph[jupyter]"`, not a requirement: hosted notebooks manage their
+  own IPython and ipywidgets, and installing plexgraph must not change them. The widget does not import `websockets`, so
+  `pip install --no-deps plexgraph anywidget psygnal` works where nothing at all may be replaced.
 - `scripts/verify-widget.mjs` runs the widget in a real JupyterLab in a real browser (in CI): it renders, a style change
   arrives live, nothing listens on a port, and the viewer comes back after a page reload.
 
@@ -46,7 +48,12 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   name, and in a file with an explicit delimiter a trailing empty field was dropped, so a valid row was rejected as
   having too few columns.
 - `ShowHandle.url` is `None` in Colab, where there is no address to give, instead of a path that looked like one.
-- The bridge declared `websockets>=12`, but it uses the `websockets.asyncio` API, which needs 13 or newer.
+- The bridge declared `websockets>=12`, but it uses the `websockets.asyncio` API, which needs 13 or newer. It also
+  called `websockets.serve`, which before version 14 is the older implementation and does not work with this code; it now
+  uses `websockets.asyncio.server.serve`, and versions 13.1 and 17 are both tested.
+- The first example in the README and in the package docstring called `add_edge` on nodes that did not exist and would
+  have raised `KeyError`. They are fixed, and a test now runs the first example of each README and the docstring.
+- `python -m plexgraph info` reports whether `anywidget` is installed.
 - The viewer accepts `?ws=same-origin` (the server that served the page) or a full `ws://`/`wss://` address, not only a
   port number, and its `disconnected`/`connection error` messages now say which address it tried.
 

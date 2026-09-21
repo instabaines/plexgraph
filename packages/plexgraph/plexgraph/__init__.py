@@ -3,6 +3,8 @@
     import plexgraph as pg
 
     g = pg.Graph()
+    g.add_node("alice")
+    g.add_node("bob")
     g.add_edge("alice", "bob", weight=2.0)
     pg.show(g, node_color=pg.by_degree("plasma"))
 
@@ -11,6 +13,8 @@ viewer and styling from `plexgraph_bridge`. Those two are installed alongside th
 supported entry point.
 """
 
+from typing import TYPE_CHECKING, Any
+
 from plexgraph._version import __version__
 from plexgraph_bridge import (
     COLORMAPS,
@@ -18,7 +22,6 @@ from plexgraph_bridge import (
     RESET,
     SHAPES,
     STYLE_OPTIONS,
-    BridgeServer,
     by_attribute,
     by_degree,
     by_time,
@@ -47,6 +50,19 @@ from plexgraph_core import (
     from_temporal_edgelist,
     read_temporal_edgelist,
 )
+
+if TYPE_CHECKING:
+    from plexgraph_bridge import BridgeServer
+
+
+def __getattr__(name: str) -> Any:
+    # Needs the `websockets` package, which the notebook widget does not; imported only when asked for.
+    if name == "BridgeServer":
+        from plexgraph_bridge import BridgeServer
+
+        return BridgeServer
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "__version__",

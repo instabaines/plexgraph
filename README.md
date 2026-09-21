@@ -28,14 +28,17 @@ Until the first release is on PyPI, build the package and install the wheel. Thi
 ```sh
 pip install build
 python scripts/build_release.py               # needs Node.js and pnpm once, to build the viewer
-pip install dist/plexgraph-0.1.0-py3-none-any.whl
-pip install pandas networkx ipython           # optional: only for the pandas/networkx loaders and inline Jupyter display
+pip install dist/plexgraph-*.whl
+pip install "plexgraph[jupyter]"            # optional: the notebook widget (anywidget); see "Where it runs" in the user guide
+pip install pandas networkx                   # optional: only for the pandas/networkx loaders
 ```
 
 ```python
 import plexgraph as pg
 
 g = pg.Graph()
+g.add_node("alice")
+g.add_node("bob")
 g.add_edge("alice", "bob", weight=2.0)
 pg.show(g, node_color=pg.by_degree("plasma"))
 ```
@@ -71,7 +74,8 @@ Then, from the repo root, run any example with that environment's Python (`.venv
 Each opens a browser tab rendering the graph, with the layout animating as it converges.
 
 **What gets installed.** `plexgraph-core` needs `numpy` and `msgpack`; `plexgraph-bridge` adds
-`websockets` (and `ipython` for inline Jupyter display, via its `jupyter` extra). `pandas` and `networkx`
+`websockets`, which the browser-tab viewer uses. The notebook widget needs `anywidget` (its `jupyter` extra) and no
+`websockets`. `pandas` and `networkx`
 are optional, needed only by the loaders that take those types: `pip install "plexgraph-core[pandas]"`,
 `"plexgraph-core[networkx]"`, or `"plexgraph-core[all]"`. The notebooks use the extras above plus
 `scipy`, `python-igraph` and `matplotlib` (see `benchmarks/requirements.txt`); `requirements-dev.txt` and
