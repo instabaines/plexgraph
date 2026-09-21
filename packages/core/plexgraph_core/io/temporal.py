@@ -273,5 +273,7 @@ def read_temporal_edgelist(
     except (ValueError, TypeError) as exc:
         # The shared parser numbers events; the reader knows the file line the failing event came from.
         if re.match(r"event \d+", str(exc)):
-            raise type(exc)(re.sub(r"^event \d+", f"{path}:{current_line}", str(exc), count=1)) from None
+            where = f"{path}:{current_line}"
+            # replaced through a function: a Windows path has backslashes, which re.sub would read as escapes
+            raise type(exc)(re.sub(r"^event \d+", lambda _: where, str(exc), count=1)) from None
         raise

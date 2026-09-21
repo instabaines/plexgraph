@@ -219,3 +219,11 @@ def test_numeric_text_in_tuples_is_a_number_not_a_failed_date():
     assert [c.t_start for c in g.connectors()] == [5.0, 7.5] and g.time_unit is None
     g2 = from_temporal_edgelist([("a", "b", "20131231")], time_format="%Y%m%d")
     assert next(iter(g2.connectors())).t_start == dt.datetime(2013, 12, 31, tzinfo=dt.timezone.utc).timestamp()
+
+
+def test_error_location_survives_backslashes_in_the_path(tmp_path):
+    # Windows paths contain backslashes; they must not be treated as regex escapes when the message is built.
+    f = tmp_path / "C_Users_me.txt".replace("_", "\\")
+    f.write_text("1 2 soon\n")
+    with pytest.raises(ValueError, match="soon"):
+        read_temporal_edgelist(f)

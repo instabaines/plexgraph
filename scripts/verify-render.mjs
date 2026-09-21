@@ -19,9 +19,11 @@
 // then pass http://localhost:<http_port>/?ws=<ws_port> (printed if you use
 // ShowHandle instead of block=True) as the URL argument here.
 //
-// Requires `npx playwright install chromium` once per machine.
+// Uses Chrome from CHROME_PATH, else /usr/bin/google-chrome when present, else the browser from
+// `npx playwright install chromium`.
 
 import { chromium } from "playwright";
+import { existsSync } from "node:fs";
 
 const url = process.argv[2];
 if (!url) {
@@ -30,7 +32,9 @@ if (!url) {
 }
 const screenshotPath = process.argv[3] ?? null;
 
+const chrome = process.env.CHROME_PATH || (existsSync("/usr/bin/google-chrome") ? "/usr/bin/google-chrome" : undefined);
 const browser = await chromium.launch({
+  executablePath: chrome,
   args: ["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"],
 });
 const page = await browser.newPage({ viewport: { width: 1000, height: 800 } });
