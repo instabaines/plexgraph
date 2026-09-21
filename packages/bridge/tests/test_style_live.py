@@ -27,7 +27,7 @@ def start(**kwargs):
 
 
 async def connect(handle):
-    return await websockets.connect(f"ws://localhost:{handle.ws_port}", max_size=None)
+    return await websockets.connect(handle.ws_url, max_size=None)
 
 
 async def collect(ws, until_layout_steps=0, timeout=5.0):

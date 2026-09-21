@@ -7,6 +7,13 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [0.1.1]
 
+### Security
+- The viewer's WebSocket accepted a connection from any web page open in the same browser: a browser lets a page connect
+  to `localhost:<port>` whatever its origin, so any site you visited while a viewer was open could read the graph
+  (including node names and attributes) from a guessed port. Each `show()` session now has a random secret token
+  that its own viewer URL carries, and connections without it are refused (HTTP 403). `handle.ws_url` gives the
+  address, with the token, for your own WebSocket clients.
+
 ### Fixed
 - `show()` in Google Colab blocked forever and displayed nothing: Colab was not recognised as a notebook (its shell
   is not a `ZMQInteractiveShell`), so the call waited on a browser that a remote machine cannot open. Colab is now
@@ -14,6 +21,16 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   serves both the viewer page and its WebSocket there, because Colab treats a second forwarded port as a different
   origin and refuses it. The server listens on all interfaces there (unless `host=` is given), because Colab's proxy
   cannot reach one bound to `localhost`.
+- Closing or reloading a viewer tab while its layout was still streaming logged a "connection handler failed"
+  traceback, which appears as red output in a notebook.
+- `show()` in a script on a machine with no browser (SSH, a container, a server) waited forever and printed nothing.
+  It now prints the address and the `ssh -L` command that forwards the ports.
+- `show()` in a hosted notebook where the viewer cannot be reached (Kaggle, JupyterHub or Binder, Databricks) now
+  warns instead of leaving a blank frame. The user guide has a new "Where it runs" table.
+- `read_temporal_edgelist`: a byte-order mark at the start of a file (as Excel writes) became part of the first node's
+  name, and in a file with an explicit delimiter a trailing empty field was dropped, so a valid row was rejected as
+  having too few columns.
+- `ShowHandle.url` is `None` in Colab, where there is no address to give, instead of a path that looked like one.
 - The bridge declared `websockets>=12`, but it uses the `websockets.asyncio` API, which needs 13 or newer.
 - The viewer accepts `?ws=same-origin` (the server that served the page) or a full `ws://`/`wss://` address, not only a
   port number, and its `disconnected`/`connection error` messages now say which address it tried.

@@ -16,8 +16,7 @@
 //     g.add_node('a'); g.add_node('b'); g.add_edge('a', 'b')
 //     show(g, open_browser=False, block=True)
 //   "
-// then pass http://localhost:<http_port>/?ws=<ws_port> (printed if you use
-// ShowHandle instead of block=True) as the URL argument here.
+// then pass the handle's `url` (it carries the session's secret token) as the URL argument here.
 //
 // Uses Chrome from CHROME_PATH, else /usr/bin/google-chrome when present, else the browser from
 // `npx playwright install chromium`.

@@ -333,6 +333,23 @@ all of that without this project reimplementing any format parser. `networkx`/`p
 dependencies — only imported when you actually call one of these functions, so you don't need them
 installed otherwise.
 
+## Where it runs
+
+`show()` starts a small server next to your Python process and points a browser at it. That works when the browser
+can reach the machine your code runs on, and it stops working when it cannot. This is what has and has not been checked:
+
+| Where you run it | Status |
+|---|---|
+| A script or a local notebook on your own computer (Linux desktop) | Verified: opens a browser tab, or shows inline |
+| Google Colab | Verified by hand: shown inline |
+| A local Jupyter, JupyterLab or VS Code notebook on Windows or macOS | Expected to work (the same code path as above); the automated tests cover the Python side on Windows and macOS, but nobody has looked at the viewer there |
+| An SSH session, a container or a server with no desktop | The address is printed. Forward both ports it names (`ssh -L`), then open it |
+| VS Code Remote, Codespaces, Dev Containers | Expected to work, because they forward ports for you. Not verified |
+| JupyterHub, Binder, Kaggle, Databricks, SageMaker, Azure ML | Not supported. The viewer's ports are not reachable from your browser, so the frame stays blank (`show()` warns on the first three). Use `show(g, return_handle=True)` with your platform's port forwarding, or a local session |
+
+A viewer that works everywhere a notebook does, without any ports, needs a widget-based integration (see
+[`docs/architecture/plan.md`](architecture/plan.md)); it is not built yet.
+
 ## Jupyter notes
 
 - `show()` auto-detects the kernel; no code changes needed versus a plain script.
@@ -345,6 +362,8 @@ installed otherwise.
   and its WebSocket from a single port and shows that port with Colab's own `serve_kernel_port_as_iframe`. Colab
   treats a second forwarded port as a different origin and refuses the socket, which is why there is only one.
   If the viewer says `disconnected (...)`, the address in brackets is where it tried to connect.
+- The viewer's socket is protected by a random secret that only its own URL carries, so another web page in your
+  browser cannot read your graph from the port. If you write your own WebSocket client, connect to `handle.ws_url`.
 - Use `width`/`height` to control the iframe's size (defaults 900x600).
 
 ## Scale and performance

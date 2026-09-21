@@ -17,7 +17,7 @@ as Python lists rather than fixed-width arrays.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Hashable
 
 import numpy as np

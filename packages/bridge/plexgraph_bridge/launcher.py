@@ -17,7 +17,11 @@ import asyncio
 import http.server
 import json
 import logging
+import os
+import secrets
+import sys
 import threading
+import warnings
 import urllib.parse
 import webbrowser
 from dataclasses import dataclass, field
@@ -27,7 +31,7 @@ from typing import Any, Callable
 
 from plexgraph_bridge.color import parse_color
 from plexgraph_bridge.server import BridgeServer
-from plexgraph_bridge.style import STYLE_OPTIONS, StyleController
+from plexgraph_bridge.style import StyleController
 from plexgraph_core.model.ir import Graph
 
 logger = logging.getLogger("plexgraph_bridge.launcher")
@@ -88,6 +92,22 @@ def _notebook_kind() -> str | None:
     return "jupyter" if shell.__class__.__name__ == "ZMQInteractiveShell" else None
 
 
+# Hosted notebooks whose kernel runs on a machine the browser cannot reach directly, so the viewer's ports are not
+# reachable from the page unless the host forwards them. The environment variable each one sets is how we know.
+_HOSTED_NOTEBOOKS = {
+    "KAGGLE_KERNEL_RUN_TYPE": "Kaggle",
+    "JUPYTERHUB_USER": "JupyterHub or Binder",
+    "DATABRICKS_RUNTIME_VERSION": "Databricks",
+}
+
+
+def _hosted_notebook() -> str | None:
+    for variable, name in _HOSTED_NOTEBOOKS.items():
+        if os.environ.get(variable):
+            return name
+    return None
+
+
 def _in_jupyter() -> bool:
     return _notebook_kind() is not None
 
@@ -98,11 +118,13 @@ def _display_inline(url: str, *, width: int, height: int) -> None:
     display(IFrame(src=url, width=width, height=height))
 
 
-def _colab_viewer_path(style: dict[str, Any]) -> str:
+def _colab_viewer_path(style: dict[str, Any], token: str | None = None) -> str:
     """The path (with query) the Colab iframe opens. One port serves both the viewer page and its WebSocket, so the
     two share an origin: a second proxied port is a different origin and Colab refuses the socket. The viewer is
     told `ws=same-origin` and works out the address for itself, because the proxied host name is Colab's to choose."""
     path = "/?ws=same-origin"
+    if token:
+        path += f"&token={urllib.parse.quote(token)}"
     if style:
         path += f"&style={urllib.parse.quote(json.dumps(style))}"
     return path
@@ -214,8 +236,10 @@ def _build_style_dict(style_kwargs: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _viewer_url(host: str, http_port: int, ws_port: int, style: dict[str, Any]) -> str:
+def _viewer_url(host: str, http_port: int, ws_port: int, style: dict[str, Any], token: str | None = None) -> str:
     url = f"http://{host}:{http_port}/?ws={ws_port}"
+    if token:
+        url += f"&token={urllib.parse.quote(token)}"
     if style:
         url += f"&style={urllib.parse.quote(json.dumps(style))}"
     return url
@@ -231,8 +255,14 @@ class ShowHandle:
     http_port: int | None
     thread: threading.Thread
     _stop: Callable[[], None] = field(repr=False)
-    url: str | None = None
+    token: str | None = field(default=None, repr=False)  # the secret a viewer must present to connect
+    url: str | None = None  # where the viewer is; None when there is no address to give (no viewer served, or Colab)
     _style: StyleController | None = field(default=None, repr=False)
+
+    @property
+    def ws_url(self) -> str:
+        """The address a WebSocket client connects to (the viewer does this itself; it is for your own clients)."""
+        return f"ws://localhost:{self.ws_port}/" + (f"?token={urllib.parse.quote(self.token)}" if self.token else "")
 
     def close(self) -> None:
         """Stop HTTP/WebSocket servers and release the session (idempotent)."""
@@ -424,6 +454,7 @@ def show(
     elif block is None:
         block = True
 
+    token = secrets.token_urlsafe(16)
     app_dir = _static_app_dir()
     single_port = notebook == "colab" and app_dir.exists()  # see _colab_viewer_path
     if single_port and host == "localhost":
@@ -449,6 +480,7 @@ def show(
                 seed=seed,
                 style=controller,
                 static_dir=app_dir if single_port else None,
+                token=token,
             )
             port = await server.start()
             controller.bind(server.push_style)
@@ -488,20 +520,37 @@ def show(
         httpd = _serve_static(app_dir, host, http_port)
         actual_http_port = httpd.server_address[1]
 
-    url = None
+    url: str | None = None
     if actual_http_port is not None:
         if notebook == "colab":
-            url = _colab_viewer_path(style)  # relative to Colab's proxy, which only Colab can name
-            logger.info("displaying in Colab: %s", url)
-            _display_colab(actual_ws_port, url, height=height)
+            path = _colab_viewer_path(style, token)
+            logger.info("displaying in Colab: %s", path)
+            _display_colab(actual_ws_port, path, height=height)
+            # url stays None: Colab's proxy address is Colab's to choose, so there is no URL to hand out
         else:
-            url = _viewer_url(host, actual_http_port, actual_ws_port, style)
-        if notebook == "jupyter":
-            logger.info("displaying inline: %s", url)
-            _display_inline(url, width=width, height=height)
-        elif open_browser:
-            logger.info("opening %s", url)
-            webbrowser.open(url)
+            url = _viewer_url(host, actual_http_port, actual_ws_port, style, token)
+            hosted = _hosted_notebook() if notebook == "jupyter" else None
+            if hosted:
+                warnings.warn(
+                    f"This looks like {hosted}. The viewer is served from the notebook's machine on ports "
+                    f"{actual_http_port} and {actual_ws_port}, which your browser can only reach if the host forwards "
+                    "them, so the frame below may stay blank. See 'Where it runs' in the user guide.",
+                    RuntimeWarning, stacklevel=2)
+            if notebook == "jupyter":
+                logger.info("displaying inline: %s", url)
+                _display_inline(url, width=width, height=height)
+            elif open_browser:
+                logger.info("opening %s", url)
+                try:
+                    opened = webbrowser.open(url)
+                except Exception:  # a broken browser setup must not take the session down
+                    opened = False
+                if not opened:
+                    # No desktop to open a browser on (an SSH session, a container, a server): without this the call
+                    # would wait forever and nothing on screen would say why or where the viewer is.
+                    print(f"plexgraph: no browser could be opened. Open {url} in one. On a remote machine, forward "
+                          f"both ports first: ssh -L {actual_http_port}:localhost:{actual_http_port} "
+                          f"-L {actual_ws_port}:localhost:{actual_ws_port} <host>", file=sys.stderr)
     else:
         logger.info(
             "bridge ready at ws://%s:%d (no frontend to open)", host, actual_ws_port
@@ -520,7 +569,7 @@ def show(
         if threading.current_thread() is not bridge_thread:
             bridge_thread.join(timeout=10)
 
-    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop, url=url, _style=controller)
+    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop, token=token, url=url, _style=controller)
 
     if block:
         try:

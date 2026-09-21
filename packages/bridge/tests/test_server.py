@@ -114,3 +114,54 @@ async def test_without_a_static_dir_plain_http_is_not_served():
     finally:
         server.close()
         await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_a_tab_closing_mid_layout_is_not_logged_as_an_error(caplog):
+    g = Graph()
+    for i in range(600):
+        g.add_node(i)
+    for i in range(600):
+        g.add_edge(i, (i + 1) % 600)
+    server = BridgeServer(g, host="localhost", port=0, layout_iterations=400, seed=1)
+    port = await server.start()
+    try:
+        with caplog.at_level("ERROR"):
+            for _ in range(5):
+                async with websockets.connect(f"ws://localhost:{port}") as ws:
+                    await ws.recv()  # the graph; the layout is still streaming when the tab goes away
+                await asyncio.sleep(0.3)
+        assert [r.getMessage() for r in caplog.records] == []
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["", "?token=wrong", "?token=", "?other=secret-token", "?token=secret-token-extra"])
+async def test_with_a_token_a_client_that_lacks_it_is_refused(query):
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, token="secret-token")
+    port = await server.start()
+    try:
+        with pytest.raises(websockets.exceptions.InvalidStatus) as refused:
+            async with websockets.connect(f"ws://localhost:{port}/{query}", origin="https://evil.example.com"):
+                pass
+        assert refused.value.response.status_code == 403
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_with_a_token_the_right_one_gets_the_graph_from_any_origin(viewer_dir):
+    # the token, not the origin, is what admits a viewer: a notebook proxy may present any origin
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, static_dir=viewer_dir, token="s3cret/+=")
+    port = await server.start()
+    try:
+        async with websockets.connect(f"ws://localhost:{port}/?token=s3cret%2F%2B%3D", origin="https://proxy.example") as ws:
+            assert msgpack.unpackb(await ws.recv(), raw=False)["type"] == "graph"
+        # the page itself carries no data, so it stays reachable without the token
+        assert (await _get(port, "/"))[0] == 200
+    finally:
+        server.close()
+        await server.wait_closed()

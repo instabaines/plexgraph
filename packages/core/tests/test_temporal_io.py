@@ -229,3 +229,18 @@ def test_error_location_survives_backslashes_in_the_path(tmp_path):
     f.write_text("1 2 soon\n")
     with pytest.raises(ValueError, match="soon"):
         read_temporal_edgelist(f)
+
+
+def test_a_byte_order_mark_does_not_become_part_of_the_first_name(tmp_path):
+    f = tmp_path / "excel.txt"
+    f.write_text("a b 5\nb a 6\n", encoding="utf-8-sig")  # what Excel writes
+    g = read_temporal_edgelist(f)
+    assert sorted(n.key for n in g.nodes()) == ["a", "b"]
+
+
+def test_a_trailing_empty_field_in_a_delimited_file_is_a_column_not_whitespace(tmp_path):
+    f = tmp_path / "e.tsv"
+    f.write_text("a\tb\t5\t\nb\tc\t6\tok\n")
+    g = read_temporal_edgelist(f, delimiter="\t", columns=(0, 1, 2), attrs={"note": 3})
+    assert sorted(n.key for n in g.nodes()) == ["a", "b", "c"]
+    assert [c.attrs.get("note") for c in g.connectors()] == ["", "ok"]

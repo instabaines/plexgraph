@@ -16,6 +16,7 @@ import asyncio
 import collections
 import logging
 import mimetypes
+import secrets
 import threading
 import urllib.parse
 from pathlib import Path
@@ -122,12 +123,19 @@ class BridgeServer:
         seed: int | None = None,
         style: "StyleController | None" = None,
         static_dir: Path | None = None,
+        token: str | None = None,
     ) -> None:
-        """With `static_dir`, plain HTTP requests on this same port are answered with the viewer's files, so one
+        """With a `token`, only a viewer that presents it (`ws://host:port/?token=...`) is served the graph. The
+        server listens on a port that any web page open in the same browser can try to connect to, and a browser
+        lets a page do that whatever its origin, so without a secret only the port number stands between a
+        stranger's page and your data. `show()` always sets one.
+
+        With `static_dir`, plain HTTP requests on this same port are answered with the viewer's files, so one
         port serves both the page and the WebSocket. That is what a remote notebook needs: it can forward a single
         port, and the page and the socket then share an origin."""
         self.graph = graph
         self.static_dir = static_dir
+        self.token = token
         self.style = style
         self._clients: set[_Client] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -171,6 +179,8 @@ class BridgeServer:
             # (hover/selection events flowing frontend -> Python).
             async for _message in websocket:
                 pass
+        except websockets.ConnectionClosed:
+            pass  # the tab was closed or reloaded, possibly mid-layout: normal, and not worth a traceback
         finally:
             self._clients.discard(client)
             if client.writer is not None:
@@ -215,16 +225,26 @@ class BridgeServer:
         """Start listening and return the bound port."""
         self._loop = asyncio.get_running_loop()
         self._server = await websockets.serve(self._handle_connection, self.host, self.port,
-                                              process_request=self._process_request if self.static_dir else None)
+                                              process_request=self._process_request)
         bound_port = self._server.sockets[0].getsockname()[1]
         self.port = bound_port
         logger.info("bridge server listening on ws://%s:%d", self.host, bound_port)
         return bound_port
 
+    def _authorised(self, request_path: str) -> bool:
+        if self.token is None:
+            return True
+        supplied = urllib.parse.parse_qs(urllib.parse.urlsplit(request_path).query).get("token", [""])[0]
+        return secrets.compare_digest(supplied.encode(), self.token.encode())
+
     def _process_request(self, connection: ServerConnection, request: Request) -> Response | None:
         if request.headers.get("Upgrade", "").lower() == "websocket":
+            if not self._authorised(request.path):
+                body = b"forbidden"
+                return Response(403, "Forbidden", Headers([("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]), body)
             return None  # a viewer connecting: carry on with the WebSocket handshake
-        assert self.static_dir is not None
+        if self.static_dir is None:
+            return None  # not a WebSocket and nothing to serve: the library answers "upgrade required"
         return _static_response(self.static_dir, request.path)
 
     async def wait_closed(self) -> None:

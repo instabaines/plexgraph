@@ -36,14 +36,14 @@ async def test_show_serves_static_app_and_streams_graph():
         "the built app is required for this end-to-end check"
     )
 
-    assert handle.url == _viewer_url("localhost", handle.http_port, handle.ws_port, {})
+    assert handle.url == _viewer_url("localhost", handle.http_port, handle.ws_port, {}, handle.token)
 
     with urllib.request.urlopen(f"http://localhost:{handle.http_port}/index.html") as resp:
         assert resp.status == 200
         html = resp.read().decode()
     assert "<title>plexgraph</title>" in html
 
-    async with websockets.connect(f"ws://localhost:{handle.ws_port}") as ws:
+    async with websockets.connect(handle.ws_url) as ws:
         first = msgpack.unpackb(await ws.recv(), raw=False)
         assert first["type"] == "graph"
         assert len(first["nodes"]) == 6
@@ -238,7 +238,7 @@ def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_fr
         assert opened == [] and inline == []
         assert bound == ["0.0.0.0"]  # Colab's proxy cannot reach a server bound to localhost
         assert handle.http_port == handle.ws_port  # a second proxied port would be a different origin
-        assert colab == [(handle.ws_port, "/?ws=same-origin", "100%", "480")]
+        assert colab == [(handle.ws_port, f"/?ws=same-origin&token={urllib.parse.quote(handle.token)}", "100%", "480")]
         # the page really is served by that port
         page = urllib.request.urlopen(f"http://localhost:{handle.ws_port}/").read().decode()
         assert "<title>plexgraph</title>" in page
@@ -249,4 +249,111 @@ def test_show_in_colab_does_not_block_or_open_a_browser_and_serves_everything_fr
 def test_colab_path_carries_the_style():
     path = launcher._colab_viewer_path({"nodeColor": [1, 0, 0, 1]})
     assert path.startswith("/?ws=same-origin&style=")
+    assert launcher._colab_viewer_path({"a": 1}, "tok").startswith("/?ws=same-origin&token=tok&style=")
     assert launcher._colab_viewer_path({}) == "/?ws=same-origin"
+
+
+def test_when_no_browser_can_open_the_address_is_printed(monkeypatch, capsys):
+    monkeypatch.setattr(launcher.webbrowser, "open", lambda url: False)  # a server or container has no desktop
+    handle = show(_small_graph(), layout_iterations=2, block=False, return_handle=True)
+    try:
+        err = capsys.readouterr().err
+        assert handle.url in err and "ssh -L" in err
+        assert f"-L {handle.http_port}:" in err and f"-L {handle.ws_port}:" in err
+    finally:
+        handle.close()
+
+
+def test_a_browser_that_raises_does_not_take_the_session_down(monkeypatch, capsys):
+    def broken(url):
+        raise RuntimeError("no display")
+    monkeypatch.setattr(launcher.webbrowser, "open", broken)
+    handle = show(_small_graph(), layout_iterations=2, block=False, return_handle=True)
+    try:
+        assert handle.url in capsys.readouterr().err
+    finally:
+        handle.close()
+
+
+def test_a_successful_browser_open_prints_nothing(monkeypatch, capsys):
+    monkeypatch.setattr(launcher.webbrowser, "open", lambda url: True)
+    handle = show(_small_graph(), layout_iterations=2, block=False, return_handle=True)
+    try:
+        assert capsys.readouterr().err == ""
+    finally:
+        handle.close()
+
+
+def test_colab_has_no_url_to_hand_out(colab):
+    handle = show(_small_graph(), layout_iterations=2, return_handle=True)
+    try:
+        assert handle.url is None
+    finally:
+        handle.close()
+
+
+@pytest.mark.parametrize("variable, name", [("KAGGLE_KERNEL_RUN_TYPE", "Kaggle"), ("JUPYTERHUB_USER", "JupyterHub"), ("DATABRICKS_RUNTIME_VERSION", "Databricks")])
+def test_a_hosted_notebook_gets_a_warning_instead_of_a_silent_blank_frame(monkeypatch, variable, name):
+    import IPython
+
+    class Shell:  # a plain Jupyter kernel
+        pass
+    Shell.__name__ = "ZMQInteractiveShell"
+    monkeypatch.setattr(IPython, "get_ipython", lambda: Shell())
+    monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: None)
+    monkeypatch.setenv(variable, "1")
+    with pytest.warns(RuntimeWarning, match=name):
+        handle = show(_small_graph(), layout_iterations=2, return_handle=True)
+    handle.close()
+
+
+def test_no_warning_in_an_ordinary_local_notebook(monkeypatch, recwarn):
+    import IPython
+
+    class Shell:
+        pass
+    Shell.__name__ = "ZMQInteractiveShell"
+    monkeypatch.setattr(IPython, "get_ipython", lambda: Shell())
+    monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: None)
+    for variable in launcher._HOSTED_NOTEBOOKS:
+        monkeypatch.delenv(variable, raising=False)
+    handle = show(_small_graph(), layout_iterations=2, return_handle=True)
+    handle.close()
+    assert not [w for w in recwarn if issubclass(w.category, RuntimeWarning)]
+
+
+def test_show_protects_the_socket_with_a_secret_that_only_its_own_viewer_url_carries():
+    import websockets.sync.client as sync_client
+    from websockets.exceptions import InvalidStatus
+
+    handle = show(_small_graph(), layout_iterations=2, open_browser=False, block=False, return_handle=True)
+    try:
+        assert handle.token and f"token={urllib.parse.quote(handle.token)}" in handle.url
+        # what a page from another site can do: it knows the port, not the secret
+        with pytest.raises(InvalidStatus) as refused:
+            with sync_client.connect(f"ws://localhost:{handle.ws_port}", origin="https://evil.example.com"):
+                pass
+        assert refused.value.response.status_code == 403
+        with sync_client.connect(handle.ws_url, max_size=None) as ws:
+            assert msgpack.unpackb(ws.recv(timeout=10), raw=False)["type"] == "graph"
+    finally:
+        handle.close()
+
+
+def test_every_session_gets_its_own_secret():
+    first = show(_small_graph(), layout_iterations=1, open_browser=False, block=False, return_handle=True)
+    second = show(_small_graph(), layout_iterations=1, open_browser=False, block=False, return_handle=True)
+    try:
+        assert first.token != second.token and len(first.token) >= 16
+    finally:
+        first.close()
+        second.close()
+
+
+def test_the_colab_path_carries_the_secret(colab):
+    handle = show(_small_graph(), layout_iterations=2, return_handle=True)
+    try:
+        port, path, _, _ = colab[0]
+        assert path == f"/?ws=same-origin&token={urllib.parse.quote(handle.token)}"
+    finally:
+        handle.close()

@@ -112,6 +112,9 @@ if (!wsPort) {
   const wsUrl = wsPort === "same-origin"
     ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/`
     : /^wss?:\/\//.test(wsPort) ? wsPort : `ws://${wsHost}:${wsPort}`;
+  // The server only talks to a viewer that knows the secret it was started with. It is kept out of what is shown.
+  const token = params.get("token");
+  const wsAddress = token ? `${wsUrl}${wsUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : wsUrl;
   // Idle/connected state shows nothing (no "connected (ws://host:port)"
   // clutter — it's debug info, not something a viewer or an exported
   // image should carry) — only genuinely useful states (an error, or the
@@ -132,7 +135,7 @@ if (!wsPort) {
   let tools: ReturnType<typeof mountTools> | null = null;
   let appearance: ReturnType<typeof mountAppearance> | null = null;
   let timeUnit: "epoch_seconds" | null = null;
-  const handle = mountViewer(canvas, wsUrl, {
+  const handle = mountViewer(canvas, wsAddress, {
     ...style,
     onGraphLoaded: () => {
       tools?.graphLoaded();

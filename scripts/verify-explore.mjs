@@ -17,7 +17,7 @@ for i in range(6001):
     g.add_edge('Node '+str(i),'Node '+str((i+1)%6001),layer='Research',t_start=i%12,t_end=i%12+2)
     g.add_edge('Node '+str(i),'Node '+str((i+37)%6001),layer='Engineering',directed=True)
 h=show(g,open_browser=False,block=False,return_handle=True,seed=0,layout_iterations=10)
-print(json.dumps({'url':f'http://localhost:{h.http_port}/?ws={h.ws_port}'}),flush=True)
+print(json.dumps({'url':h.url}),flush=True)
 try: threading.Event().wait()
 finally: h.close()
 `],{cwd:root,env:{...process.env,PYTHONPATH:`${root}/packages/core:${root}/packages/bridge`},stdio:['ignore','pipe','pipe']});

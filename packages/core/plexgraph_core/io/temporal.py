@@ -243,10 +243,13 @@ def read_temporal_edgelist(
     def events():
         nonlocal current_line
         skipped_header = not header
-        with open(path, encoding="utf-8") as fh:
-            for number, line in enumerate(fh, 1):
-                line = line.strip()
-                if not line or (comments and line.startswith(comments)):
+        # utf-8-sig: a file saved by Excel starts with a byte-order mark, which would otherwise become part of the
+        # first name. Only the line ending is removed, because with an explicit delimiter a trailing empty field
+        # ("a<TAB>b<TAB>5<TAB>") is a real, empty column.
+        with open(path, encoding="utf-8-sig") as fh:
+            for number, raw in enumerate(fh, 1):
+                line = raw.rstrip("\r\n") if delimiter else raw.strip()
+                if not line.strip() or (comments and line.lstrip().startswith(comments)):
                     continue
                 current_line = number
                 if not skipped_header:

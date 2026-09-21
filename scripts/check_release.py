@@ -14,7 +14,6 @@ contents and runs `twine check`.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import shutil
 import subprocess
@@ -67,7 +66,7 @@ try:
     assert len(urllib.request.urlopen(base + bundle).read()) > 50_000, "the viewer script is missing or truncated"
     report["viewer_bytes"] = len(urllib.request.urlopen(base + bundle).read())
 
-    with connect(f"ws://localhost:{handle.ws_port}", max_size=None) as ws:
+    with connect(handle.ws_url, max_size=None) as ws:
         kinds = []
         for _ in range(6):
             message = msgpack.unpackb(ws.recv(timeout=15), raw=False)
