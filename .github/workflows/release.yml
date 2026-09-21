@@ -1,0 +1,133 @@
+name: Release
+
+# Push a tag like v0.1.0 to publish to PyPI. Run the workflow by hand to publish to TestPyPI first.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to publish
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag must match VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          expected="$(cat VERSION)"
+          if [ "${GITHUB_REF_NAME#v}" != "$expected" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match VERSION $expected" >&2
+            exit 1
+          fi
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install build twine
+      - run: pnpm install --frozen-lockfile
+      - name: Test before building
+        run: |
+          pnpm --filter @plexgraph/viz-core lint
+          pnpm --filter @plexgraph/viz-core test
+          pnpm --filter @plexgraph/app lint
+      - run: python scripts/build_release.py --build-frontend
+      - run: pip install -e "packages/core[all,dev]" -e "packages/bridge[dev,jupyter]" -e packages/plexgraph
+      - run: python -m pytest packages -q
+      - run: python scripts/check_release.py --browser
+      - run: python scripts/changelog_section.py "$(cat VERSION)" > release-notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: |
+            dist/
+            release-notes.md
+          if-no-files-found: error
+
+  install-check:
+    name: Installed wheel on ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: artifact
+      - run: pip install twine
+      - run: python scripts/check_release.py artifact/dist
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    needs: [build, install-check]
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write   # trusted publishing: no API token is stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: artifact
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: artifact/dist
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    needs: [build, install-check]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: artifact
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: artifact/dist
+
+  github-release:
+    name: GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: artifact
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifact/dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "plexgraph ${GITHUB_REF_NAME#v}" --notes-file artifact/release-notes.md

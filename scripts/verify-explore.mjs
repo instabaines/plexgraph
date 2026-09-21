@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 const root=fileURLToPath(new URL('..',import.meta.url));
 const server=spawn(process.env.PYTHON_PATH || 'python3',['-u','-c',`
 import json, threading
-from hyperloom_core import Graph
-from hyperloom_bridge import show
+from plexgraph_core import Graph
+from plexgraph_bridge import show
 g=Graph()
 for i in range(6001): g.add_node('Node '+str(i), role='research' if i%2 else 'engineering')
 for layer in ['Research','Engineering']: g.add_layer(layer)
@@ -34,19 +34,19 @@ try {
   const page=await browser.newPage({viewport:{width:1280,height:800}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(url);
-  await page.waitForFunction(()=>window.__hyperloomHandle?.searchNodes('Node 12').length>0);
-  assert(await page.evaluate(()=>window.__hyperloomHandle.exportSVG().includes('Density overview')));
+  await page.waitForFunction(()=>window.__plexgraphHandle?.searchNodes('Node 12').length>0);
+  assert(await page.evaluate(()=>window.__plexgraphHandle.exportSVG().includes('Density overview')));
   await page.getByLabel('Find a node').fill('Node 12');
   await page.getByRole('button',{name:'Node 12',exact:true}).click();
-  await page.waitForFunction(()=>window.__hyperloomHandle.getVisibleEdgeCount()===4);
+  await page.waitForFunction(()=>window.__plexgraphHandle.getVisibleEdgeCount()===4);
   assert((await page.locator('#node-inspector').textContent()).includes('engineering'));
-  assert(!(await page.evaluate(()=>window.__hyperloomHandle.exportSVG())).includes('Density overview'));
+  assert(!(await page.evaluate(()=>window.__plexgraphHandle.exportSVG())).includes('Density overview'));
   await page.getByRole('button',{name:'Layer atlas',exact:true}).click();
-  await page.screenshot({path:'/tmp/hyperloom-neighborhood.png'});
+  await page.screenshot({path:'/tmp/plexgraph-neighborhood.png'});
   await page.getByRole('button',{name:'Time ribbon',exact:true}).click();
   await page.getByRole('button',{name:'Fit view',exact:true}).click();
   await page.getByRole('button',{name:'Show all nodes',exact:true}).click();
-  assert(await page.evaluate(()=>window.__hyperloomHandle.exportSVG().includes('Density overview')));
+  assert(await page.evaluate(()=>window.__plexgraphHandle.exportSVG().includes('Density overview')));
   // Empty and invalid searches must not destroy the current graph.
   await page.getByLabel('Find a node').fill('does-not-exist');
   await page.getByText('No matching nodes',{exact:true}).waitFor();

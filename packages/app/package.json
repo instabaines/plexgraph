@@ -1,5 +1,5 @@
 {
-  "name": "@hyperloom/app",
+  "name": "@plexgraph/app",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -10,7 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@hyperloom/viz-core": "workspace:*"
+    "@plexgraph/viz-core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

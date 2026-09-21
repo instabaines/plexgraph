@@ -8,8 +8,8 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 async function scenario(style) {
 const server = spawn(process.env.PYTHON_PATH || 'python3', ['-u', '-c', `
 import json, tempfile, threading, os
-from hyperloom_core import read_temporal_edgelist
-from hyperloom_bridge import show
+from plexgraph_core import read_temporal_edgelist
+from plexgraph_bridge import show
 # One contact per integer time 0..99 between 20 people, in the plain "u v t" format datasets ship in.
 path = os.path.join(tempfile.mkdtemp(), 'contacts.txt')
 import datetime as dt
@@ -39,10 +39,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 850 } });
   const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(url);
-  const edges = () => page.evaluate(() => window.__hyperloomHandle.getVisibleEdgeCount());
+  const edges = () => page.evaluate(() => window.__plexgraphHandle.getVisibleEdgeCount());
   const at = t => style === 'iso' ? 1577836800 + t * 86400 : t;   // 2020-01-01 UTC plus t days
   const setTime = async t => { await page.evaluate(v => { const s = document.getElementById('timeline-slider'); s.value = String(v); s.dispatchEvent(new Event('input', { bubbles: true })); }, t); await page.waitForTimeout(150); };
-  await page.waitForFunction(() => window.__hyperloomHandle?.getVisibleEdgeCount?.() === 100);
+  await page.waitForFunction(() => window.__plexgraphHandle?.getVisibleEdgeCount?.() === 100);
   await page.getByLabel('Time selection').waitFor();
 
   if (style === 'skew') {
@@ -99,7 +99,7 @@ try {
   if (style === 'iso') assert.match(await page.locator('#stack-legend').textContent(), /2020-01-01 00:00 → 2020-01-\d\d/, 'ribbon buckets are labelled with dates');
   const bucketCounts = (await page.locator('#stack-legend .count').allTextContents()).map(Number);
   assert.equal(bucketCounts.reduce((a, b) => a + b, 0), 100, `ribbon buckets should partition the events: ${bucketCounts}`);
-  await page.screenshot({ path: `/tmp/hyperloom-temporal-${style}.png` });
+  await page.screenshot({ path: `/tmp/plexgraph-temporal-${style}.png` });
   assert.deepEqual(errors, []);
   console.log(`PASS (${style}): u v t file loads; window / instant / cumulative time views; ribbon`);
 } finally { await browser?.close(); server.kill('SIGTERM'); }

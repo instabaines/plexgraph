@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (type-check, unit tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @plexgraph/viz-core lint
+      - run: pnpm --filter @plexgraph/viz-core test
+      - run: pnpm --filter @plexgraph/app lint
+      - run: pnpm --filter @plexgraph/app build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-dist
+          path: packages/app/dist
+          if-no-files-found: error
+
+  python:
+    name: Python ${{ matrix.python }} on ${{ matrix.os }}
+    needs: frontend
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-dist
+          path: packages/app/dist
+      - name: Install the packages and their test tools
+        run: pip install -e "packages/core[all,dev]" -e "packages/bridge[dev,jupyter]" -e packages/plexgraph
+      - name: Test
+        run: python -m pytest packages -q
+
+  types:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e "packages/core[all,dev]" -e "packages/bridge[dev,jupyter]" -e packages/plexgraph mypy
+      - run: python -m mypy packages/core/plexgraph_core packages/bridge/plexgraph_bridge packages/plexgraph/plexgraph --ignore-missing-imports
+
+  browser:
+    name: Browser end-to-end
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-dist
+          path: packages/app/dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e "packages/core[all,dev]" -e "packages/bridge[dev,jupyter]" -e packages/plexgraph
+      - name: Slice views (needs the dev server)
+        run: |
+          pnpm --filter @plexgraph/app dev --host 127.0.0.1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:5173/ >/dev/null && break; sleep 1; done
+          node scripts/verify-slices.mjs
+      - name: Viewer against the real Python bridge
+        env:
+          PYTHON_PATH: python
+        run: |
+          for script in verify-explore verify-tools verify-lod verify-temporal verify-style; do
+            echo "::group::$script"
+            node scripts/$script.mjs
+            echo "::endgroup::"
+          done
+
+  package:
+    name: Build and check the release artifacts
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-dist
+          path: packages/app/dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install build twine
+      - run: python scripts/build_release.py
+      - name: Install into clean environments and use it (including the viewer in Chrome)
+        run: python scripts/check_release.py --browser
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+          if-no-files-found: error
+
+  install-check:
+    name: Installed wheel on ${{ matrix.os }}, Python ${{ matrix.python }}
+    needs: package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist
+      - run: pip install twine
+      - run: python scripts/check_release.py dist

@@ -19,15 +19,15 @@ import threading
 from typing import TYPE_CHECKING
 
 import websockets
-from websockets.asyncio.server import ServerConnection
+from websockets.asyncio.server import Server, ServerConnection
 
-from hyperloom_bridge.session import Session
-from hyperloom_core.model.ir import Graph
+from plexgraph_bridge.session import Session
+from plexgraph_core.model.ir import Graph
 
 if TYPE_CHECKING:
-    from hyperloom_bridge.style import StyleController
+    from plexgraph_bridge.style import StyleController
 
-logger = logging.getLogger("hyperloom_bridge.server")
+logger = logging.getLogger("plexgraph_bridge.server")
 
 
 # A tab that stops reading (backgrounded, or its page is busy) must never stall Python, and must not make the
@@ -108,7 +108,7 @@ class BridgeServer:
         self.port = port
         self.layout_iterations = layout_iterations
         self.seed = seed
-        self._server: websockets.asyncio.server.Server | None = None
+        self._server: Server | None = None
 
     async def _handle_connection(self, websocket: ServerConnection) -> None:
         session = Session(

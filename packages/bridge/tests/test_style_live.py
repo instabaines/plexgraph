@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 import websockets
 
-from hyperloom_bridge import RESET, by_degree, show
-from hyperloom_bridge.style import merge_style
-from hyperloom_core import Graph
+from plexgraph_bridge import RESET, by_degree, show
+from plexgraph_bridge.style import merge_style
+from plexgraph_core import Graph
 
 
 def graph() -> Graph:

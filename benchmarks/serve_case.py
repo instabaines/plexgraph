@@ -11,13 +11,13 @@ ROOT = Path(__file__).resolve().parents[1]
 for p in (ROOT, ROOT / "packages/core", ROOT / "packages/bridge"):
     sys.path.insert(0, str(p))
 
-from benchmarks.quality import build_hyperloom_graph, load_dataset  # noqa: E402
-from hyperloom_bridge import show  # noqa: E402
+from benchmarks.quality import build_plexgraph_graph, load_dataset  # noqa: E402
+from plexgraph_bridge import show  # noqa: E402
 
 ds = load_dataset(sys.argv[1])
 if ds is None:
     sys.exit(f"dataset {sys.argv[1]} unavailable")
-handle = show(build_hyperloom_graph(ds), open_browser=False, block=False, return_handle=True, seed=0,
+handle = show(build_plexgraph_graph(ds), open_browser=False, block=False, return_handle=True, seed=0,
               layout_iterations=int(sys.argv[2]) if len(sys.argv) > 2 else 100,
               node_color_by="label" if ds["labels"] is not None else None)
 print(json.dumps({"url": handle.url}), flush=True)

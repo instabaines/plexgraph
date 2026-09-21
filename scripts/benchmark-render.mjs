@@ -7,7 +7,7 @@ import os from 'node:os';
 const args = Object.fromEntries(process.argv.slice(2).map(arg => arg.replace(/^--/, '').split('=')));
 const sizes = (args.sizes ?? '1000,10000').split(',').map(Number);
 if (sizes.some(n => !Number.isInteger(n) || n < 1 || n > 100000)) throw Error('sizes must be integers from 1 to 100000');
-const output = args.output ?? '/tmp/hyperloom-browser.json';
+const output = args.output ?? '/tmp/plexgraph-browser.json';
 const url = args.url ?? 'http://127.0.0.1:5173';
 const rendererPath = '/@fs' + fileURLToPath(new URL('../packages/viz-core/src/render/renderer.ts', import.meta.url));
 const report = {node: process.version, platform: `${os.platform()} ${os.release()}`, cpu: os.cpus()[0]?.model,

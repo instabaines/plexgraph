@@ -42,7 +42,7 @@ try {
     await page.waitForFunction(() => window.hovered === 0);
     await page.mouse.move(2, 2);
     await page.waitForFunction(() => window.hovered === null);
-    await page.screenshot({path:`/tmp/hyperloom-${layout}.png`});
+    await page.screenshot({path:`/tmp/plexgraph-${layout}.png`});
     console.log(`${layout}: ${result.ink} graph pixels; SVG valid`);
   }
   await page.evaluate(() => {

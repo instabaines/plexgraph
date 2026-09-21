@@ -51,7 +51,7 @@ def main():
     ap.add_argument("--engines", default=",".join(ENGINES))
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--iterations", type=int, default=100)
-    ap.add_argument("--out", type=Path, default=Path("/tmp/hyperloom-quality"))
+    ap.add_argument("--out", type=Path, default=Path("/tmp/plexgraph-quality"))
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     import matplotlib

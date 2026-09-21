@@ -4,8 +4,8 @@ For bounded, measured runs use benchmarks/layout_audit.py instead."""
 
 import numpy as np
 
-from hyperloom_bridge import show
-from hyperloom_core import Graph
+from plexgraph_bridge import show
+from plexgraph_core import Graph
 
 
 def main() -> None:

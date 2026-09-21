@@ -1,8 +1,8 @@
 """Phase A exit-criterion example: build a graph, call show(), watch it
 render in a browser tab with the layout converging live."""
 
-from hyperloom_bridge import show
-from hyperloom_core import Graph
+from plexgraph_bridge import show
+from plexgraph_core import Graph
 
 
 def main() -> None:

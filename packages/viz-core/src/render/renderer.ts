@@ -942,7 +942,7 @@ export class Renderer {
     // anyway) and no per-layer color — full edgeWidthPx/color control
     // only kicks in below the threshold, the same kind of size-based
     // quality/perf tradeoff the Python layout already makes (see
-    // MAX_EXACT_REPULSION_NODES in hyperloom_core.algorithms.layout).
+    // MAX_EXACT_REPULSION_NODES in plexgraph_core.algorithms.layout).
     const edgeDrawThin = regl({
       vert: `
         precision mediump float;

@@ -9,8 +9,8 @@ Click "Stack: time" (top-left) instead to see the whole timeline at once,
 as a sequence of separated planes (bucketed, blue=early to orange=late)
 rather than one moment at a time."""
 
-from hyperloom_bridge import show
-from hyperloom_core import Graph
+from plexgraph_bridge import show
+from plexgraph_core import Graph
 
 
 def main() -> None:

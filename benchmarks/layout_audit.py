@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def build_case(kind, n, seed=0):
     import numpy as np
-    from hyperloom_core import Graph
+    from plexgraph_core import Graph
     rng = np.random.default_rng(seed)
     g = Graph()
     for i in range(n):
@@ -58,7 +58,7 @@ def build_case(kind, n, seed=0):
 def measure(kind, n, seed, iterations):
     import resource
     import numpy as np
-    from hyperloom_core.algorithms.layout import force_directed_layout
+    from plexgraph_core.algorithms.layout import force_directed_layout
     started = time.perf_counter()
     graph = build_case(kind, n, seed)
     build_seconds = time.perf_counter() - started
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     parser.add_argument("--suite", choices=["quick", "scale"], default="quick")
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--memory-mb", type=int, default=1024)
-    parser.add_argument("--output", type=Path, default=Path("/tmp/hyperloom-layout-audit.json"))
+    parser.add_argument("--output", type=Path, default=Path("/tmp/plexgraph-layout-audit.json"))
     parser.add_argument("--worker")
     args = parser.parse_args()
     if args.worker:

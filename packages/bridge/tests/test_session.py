@@ -2,9 +2,9 @@ import asyncio
 import threading
 import numpy as np
 import pytest
-from hyperloom_bridge.session import Session
-from hyperloom_core import Graph
-from hyperloom_core.algorithms.layout import LayoutStep
+from plexgraph_bridge.session import Session
+from plexgraph_core import Graph
+from plexgraph_core.algorithms.layout import LayoutStep
 
 
 @pytest.mark.asyncio
@@ -16,7 +16,7 @@ async def test_layout_runs_off_event_loop_and_respects_backpressure(monkeypatch)
             assert threading.get_ident() != event_thread
             generated.append(i)
             yield LayoutStep(i + 1, np.zeros((1, 2)), False)
-    monkeypatch.setattr("hyperloom_bridge.session.force_directed_layout", steps)
+    monkeypatch.setattr("plexgraph_bridge.session.force_directed_layout", steps)
     sent = 0
     async def send(data):
         nonlocal sent

@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.model.ir import Graph
 
 
 def test_plain_graph_add_and_read():

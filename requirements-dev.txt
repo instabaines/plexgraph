@@ -4,4 +4,5 @@
 # With uv, `uv sync` does the same from pyproject.toml.
 -e packages/core[all,dev]
 -e packages/bridge[jupyter,dev]
+-e packages/plexgraph
 -r benchmarks/requirements.txt

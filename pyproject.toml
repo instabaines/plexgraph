@@ -1,23 +1,24 @@
 # Development environment for the whole monorepo. Not published: the installable packages are
-# packages/core (hyperloom-core) and packages/bridge (hyperloom-bridge).
+# packages/core (plexgraph-core) and packages/bridge (plexgraph-bridge).
 #
 #   uv sync                                  # everything: both packages, optional loaders, tests, notebooks, benchmarks
 #   pip install -r requirements-dev.txt      # the same, without uv
 [project]
-name = "hyperloom-workspace"
+name = "plexgraph-workspace"
 version = "0.0.0"
-description = "Development environment for the hyperloom monorepo"
+description = "Development environment for the plexgraph monorepo"
 requires-python = ">=3.11"
 dependencies = [
-    "hyperloom-core[all]",
-    "hyperloom-bridge[jupyter]",
+    "plexgraph",
+    "plexgraph-core[all]",
+    "plexgraph-bridge[jupyter]",
 ]
 
 [dependency-groups]
 # uv installs the `dev` group by default.
 dev = [
-    "hyperloom-core[dev]",
-    "hyperloom-bridge[dev]",   # pytest, pytest-asyncio, ipykernel, nbclient, nbformat, jupyter_client
+    "plexgraph-core[dev]",
+    "plexgraph-bridge[dev]",   # pytest, pytest-asyncio, ipykernel, nbclient, nbformat, jupyter_client
     "scipy>=1.11",             # benchmarks/ and evaluation.ipynb
     "python-igraph>=0.11",
     "matplotlib>=3.8",
@@ -27,11 +28,12 @@ dev = [
 package = false
 
 [tool.uv.sources]
-hyperloom-core = { workspace = true }
-hyperloom-bridge = { workspace = true }
+plexgraph = { workspace = true }
+plexgraph-core = { workspace = true }
+plexgraph-bridge = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/core", "packages/bridge", "packages/widget"]
+members = ["packages/core", "packages/bridge", "packages/plexgraph", "packages/widget"]
 
 [tool.ruff]
 line-length = 100

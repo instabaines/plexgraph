@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterator
 import numpy as np
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.model.ir import Graph
 
 MAX_EXACT_REPULSION_NODES = 512
 

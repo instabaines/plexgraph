@@ -14,7 +14,7 @@ importers:
 
   packages/app:
     dependencies:
-      '@hyperloom/viz-core':
+      '@plexgraph/viz-core':
         specifier: workspace:*
         version: link:../viz-core
     devDependencies:

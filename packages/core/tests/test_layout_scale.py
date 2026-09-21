@@ -2,8 +2,8 @@ import time
 
 import numpy as np
 
-from hyperloom_core.algorithms.layout import force_directed_layout
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.algorithms.layout import force_directed_layout
+from plexgraph_core.model.ir import Graph
 
 
 def _random_graph(num_nodes: int, num_edges: int, seed: int = 0) -> Graph:

@@ -20,7 +20,7 @@ const CONTINUOUS: Record<string, string[]> = {
   YlOrRd: ["#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c", "#fc4e2a", "#e31a1c", "#bd0026", "#800026"],
 };
 
-/** The hyperloom default categorical palette (also used for layers); slightly translucent like the original. */
+/** The plexgraph default categorical palette (also used for layers); slightly translucent like the original. */
 export const DEFAULT_PALETTE: RGBA[] = [
   [0.85, 0.33, 0.1, 0.85],
   [0.2, 0.65, 0.32, 0.85],

@@ -15,9 +15,10 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "hyperloom-bridge",
-    "hyperloom-core",
-    "hyperloom-workspace",
+    "plexgraph",
+    "plexgraph-bridge",
+    "plexgraph-core",
+    "plexgraph-workspace",
 ]
 
 [[package]]
@@ -460,11 +461,26 @@ wheels = [
 ]
 
 [[package]]
-name = "hyperloom-bridge"
+name = "plexgraph"
+version = "0.1.0"
+source = { editable = "packages/plexgraph" }
+dependencies = [
+    { name = "plexgraph-bridge" },
+    { name = "plexgraph-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "plexgraph-bridge", editable = "packages/bridge" },
+    { name = "plexgraph-core", editable = "packages/core" },
+]
+
+[[package]]
+name = "plexgraph-bridge"
 version = "0.1.0"
 source = { editable = "packages/bridge" }
 dependencies = [
-    { name = "hyperloom-core" },
+    { name = "plexgraph-core" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "websockets" },
@@ -486,7 +502,7 @@ jupyter = [
 
 [package.metadata]
 requires-dist = [
-    { name = "hyperloom-core", editable = "packages/core" },
+    { name = "plexgraph-core", editable = "packages/core" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "ipython", marker = "extra == 'dev'" },
     { name = "ipython", marker = "extra == 'jupyter'" },
@@ -501,7 +517,7 @@ requires-dist = [
 provides-extras = ["dev", "jupyter"]
 
 [[package]]
-name = "hyperloom-core"
+name = "plexgraph-core"
 version = "0.1.0"
 source = { editable = "packages/core" }
 dependencies = [
@@ -542,18 +558,19 @@ requires-dist = [
 provides-extras = ["pandas", "networkx", "all", "dev"]
 
 [[package]]
-name = "hyperloom-workspace"
+name = "plexgraph-workspace"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "hyperloom-bridge", extra = ["jupyter"] },
-    { name = "hyperloom-core", extra = ["all"] },
+    { name = "plexgraph" },
+    { name = "plexgraph-bridge", extra = ["jupyter"] },
+    { name = "plexgraph-core", extra = ["all"] },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "hyperloom-bridge", extra = ["dev"] },
-    { name = "hyperloom-core", extra = ["dev"] },
+    { name = "plexgraph-bridge", extra = ["dev"] },
+    { name = "plexgraph-core", extra = ["dev"] },
     { name = "matplotlib" },
     { name = "python-igraph" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -562,14 +579,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "hyperloom-bridge", extras = ["jupyter"], editable = "packages/bridge" },
-    { name = "hyperloom-core", extras = ["all"], editable = "packages/core" },
+    { name = "plexgraph", editable = "packages/plexgraph" },
+    { name = "plexgraph-bridge", extras = ["jupyter"], editable = "packages/bridge" },
+    { name = "plexgraph-core", extras = ["all"], editable = "packages/core" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "hyperloom-bridge", extras = ["dev"], editable = "packages/bridge" },
-    { name = "hyperloom-core", extras = ["dev"], editable = "packages/core" },
+    { name = "plexgraph-bridge", extras = ["dev"], editable = "packages/bridge" },
+    { name = "plexgraph-core", extras = ["dev"], editable = "packages/core" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "python-igraph", specifier = ">=0.11" },
     { name = "scipy", specifier = ">=1.11" },

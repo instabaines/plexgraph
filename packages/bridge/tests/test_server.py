@@ -2,8 +2,8 @@ import msgpack
 import pytest
 import websockets
 
-from hyperloom_bridge.server import BridgeServer
-from hyperloom_core.model.ir import Graph
+from plexgraph_bridge.server import BridgeServer
+from plexgraph_core.model.ir import Graph
 
 
 def _small_graph() -> Graph:

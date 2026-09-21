@@ -30,7 +30,7 @@ from typing import Any, Hashable, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.model.ir import Graph
 
 # Seconds per unit of each declared numeric epoch.
 _EPOCH_SECONDS = {"epoch_seconds": 1.0, "epoch_milliseconds": 1e-3, "epoch_microseconds": 1e-6, "epoch_nanoseconds": 1e-9}
@@ -174,7 +174,7 @@ def from_pandas_temporal_edgelist(
     reserved = {source, target, time} | ({end} if end else set())
     if edge_attr is True:
         keep = [c for c in df.columns if c not in reserved]
-    elif edge_attr is None:
+    elif edge_attr is None or edge_attr is False:
         keep = []
     elif isinstance(edge_attr, str):
         keep = [edge_attr]

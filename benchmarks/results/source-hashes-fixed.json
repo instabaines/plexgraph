@@ -1,5 +1,5 @@
 {
-  "packages/core/hyperloom_core/algorithms/layout.py": "2a7f2a3a90f61a58a11c282ef66b15ea3d78d559f5ec61997149215f155b0f29",
+  "packages/core/plexgraph_core/algorithms/layout.py": "2a7f2a3a90f61a58a11c282ef66b15ea3d78d559f5ec61997149215f155b0f29",
   "packages/viz-core/src/render/renderer.ts": "f865b45201cb877394932ca2f853433044c454fa4d8ae38b15bf6d616df4262e",
   "packages/viz-core/src/render/density.ts": "91c099c9cf9b8347001276865b38f4d56af6b092f88dd4ad9333b452e55c314c",
   "packages/viz-core/src/interaction/graph-index.ts": "73df673b021fb372c3a89a64f9edf43e37e72e77b0bfb0fb680d420e4ee0bd2c",

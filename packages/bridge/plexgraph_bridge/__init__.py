@@ -1,6 +1,6 @@
-from hyperloom_bridge.launcher import show
-from hyperloom_bridge.server import BridgeServer
-from hyperloom_bridge.style import (
+from plexgraph_bridge.launcher import show
+from plexgraph_bridge.server import BridgeServer
+from plexgraph_bridge.style import (
     COLORMAPS,
     PALETTES,
     RESET,

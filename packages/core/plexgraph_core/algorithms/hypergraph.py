@@ -13,7 +13,7 @@ rendering and existing centrality/community algorithms.
 
 from __future__ import annotations
 
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.model.ir import Graph
 
 
 def bipartite_expansion(graph: Graph) -> Graph:
@@ -41,7 +41,7 @@ def bipartite_expansion(graph: Graph) -> Graph:
         layer_id_map[layer.id] = new_id
 
     for connector in graph.connectors():
-        layer = layer_id_map.get(connector.layer_id) if connector.layer_id is not None else None
+        new_layer = layer_id_map.get(connector.layer_id) if connector.layer_id is not None else None
         t_start = None if connector.t_start == float("-inf") else connector.t_start
         t_end = None if connector.t_end == float("inf") else connector.t_end
 
@@ -51,7 +51,7 @@ def bipartite_expansion(graph: Graph) -> Graph:
                 node_id_map[u],
                 node_id_map[v],
                 directed=connector.directed,
-                layer=layer,
+                layer=new_layer,
                 t_start=t_start,
                 t_end=t_end,
                 weight=connector.weight,
@@ -66,7 +66,7 @@ def bipartite_expansion(graph: Graph) -> Graph:
             expanded.add_edge(
                 hyperedge_node,
                 node_id_map[member],
-                layer=layer,
+                layer=new_layer,
                 t_start=t_start,
                 t_end=t_end,
                 weight=connector.weight,

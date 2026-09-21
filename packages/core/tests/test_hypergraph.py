@@ -1,5 +1,5 @@
-from hyperloom_core.algorithms.hypergraph import bipartite_expansion
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.algorithms.hypergraph import bipartite_expansion
+from plexgraph_core.model.ir import Graph
 
 
 def test_plain_edges_survive_unchanged():

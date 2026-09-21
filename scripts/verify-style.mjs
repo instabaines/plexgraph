@@ -10,9 +10,9 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const child = spawn(process.env.PYTHON_PATH || 'python3', ['-u', '-c', `
 import json, sys, threading
 import numpy as np
-import hyperloom_bridge as hb
-from hyperloom_bridge import show, RESET, by_attribute, by_degree, by_weight, by_time, by_time_bucket, size_by_degree, size_by_weight, shape_by_attribute
-from hyperloom_core import Graph
+import plexgraph_bridge as hb
+from plexgraph_bridge import show, RESET, by_attribute, by_degree, by_weight, by_time, by_time_bucket, size_by_degree, size_by_weight, shape_by_attribute
+from plexgraph_core import Graph
 g = Graph()
 for i in range(60): g.add_node(i, team=['red', 'green', 'blue'][i % 3], score=float(i))
 for t in range(100):
@@ -46,14 +46,14 @@ try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 850 } });
   const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(url);
-  await page.waitForFunction(() => window.__hyperloomHandle?.getVisibleNodeCount?.() === 60 && window.__hyperloomHandle.getStyle().node);
+  await page.waitForFunction(() => window.__plexgraphHandle?.getVisibleNodeCount?.() === 60 && window.__plexgraphHandle.getStyle().node);
   await page.waitForTimeout(3500);
   const H = (fn, arg) => page.evaluate(fn, arg);
   const settle = () => page.waitForTimeout(500);
 
   // canvas colour at a node's centre, as 0-255 rgb (reads the WebGL buffer, so this is what is really drawn)
   const colorAt = id => H(i => {
-    const h = window.__hyperloomHandle, c = document.getElementById('canvas'), gl = c.getContext('webgl2') || c.getContext('webgl');
+    const h = window.__plexgraphHandle, c = document.getElementById('canvas'), gl = c.getContext('webgl2') || c.getContext('webgl');
     const [x, y] = h.getNodeScreenPosition(i), dpr = c.width / c.clientWidth;
     const px = new Uint8Array(4); gl.readPixels(Math.round(x * dpr), Math.round(c.height - y * dpr), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
     return Array.from(px.slice(0, 3));
@@ -62,11 +62,11 @@ try {
   const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   // how many of these nodes show the expected colour at their centre (some centres are covered by neighbours)
   const share = async (ids, expected) => (await Promise.all(ids.map(colorAt))).filter((c, i) => near(c, expected(ids[i]))).length / ids.length;
-  const svg = () => H(() => window.__hyperloomHandle.exportSVG());
+  const svg = () => H(() => window.__plexgraphHandle.exportSVG());
   const legendRows = () => page.locator('#node-color-legend .row').count();
 
   // 1. The style given to show() arrives before the layout moves, and the legend and pixels show it.
-  const start = await H(() => window.__hyperloomHandle.getStyle());
+  const start = await H(() => window.__plexgraphHandle.getStyle());
   assert.deepEqual(start.node.size, 14); assert.equal(start.edge.curvature, 0.2); assert.equal(start.edge.opacity, 0.8);
   assert.equal(await legendRows(), 3, 'tab10 legend has one row per team');
   const tab10 = ['#1f77b4', '#ff7f0e', '#2ca02c'];   // red -> first seen -> tab10[0]; nodes go red, green, blue
@@ -123,13 +123,13 @@ try {
   await settle();
 
   // 3. Mistakes are caught in Python and leave the viewer alone.
-  const before = await H(() => JSON.stringify(window.__hyperloomHandle.getStyle()));
+  const before = await H(() => JSON.stringify(window.__plexgraphHandle.getStyle()));
   await pyFails('handle.style(node_color=[1, 2, 3, 4, 5], cmap="viridis")', /entries but the graph has 60 nodes/);
   await pyFails('handle.style(node_color=by_attribute("nope"))', /no node has an attribute named 'nope'/);
   await pyFails('handle.style(edge_color=by_degree())', /degree is a node property/);
   await pyFails('handle.style(node_colour="red")', /unknown style option/);
   await settle();
-  assert.equal(await H(() => JSON.stringify(window.__hyperloomHandle.getStyle())), before);
+  assert.equal(await H(() => JSON.stringify(window.__plexgraphHandle.getStyle())), before);
 
   // 4. A tab opened later sees the current style straight away.
   await pyOk('handle.style(node_color=by_attribute("score", cmap="plasma"), node_size=16)');
@@ -137,15 +137,15 @@ try {
   await settle();
   const late = await browser.newPage({ viewport: { width: 1000, height: 700 } });
   await late.goto(url);
-  await late.waitForFunction(() => window.__hyperloomHandle?.getVisibleNodeCount?.() === 60 && window.__hyperloomHandle.getStyle().node?.size === 16);
+  await late.waitForFunction(() => window.__plexgraphHandle?.getVisibleNodeCount?.() === 60 && window.__plexgraphHandle.getStyle().node?.size === 16);
   await late.waitForTimeout(1500);
-  assert.deepEqual(await late.evaluate(() => JSON.stringify(window.__hyperloomHandle.getStyle())), await H(() => JSON.stringify(window.__hyperloomHandle.getStyle())));
+  assert.deepEqual(await late.evaluate(() => JSON.stringify(window.__plexgraphHandle.getStyle())), await H(() => JSON.stringify(window.__plexgraphHandle.getStyle())));
   await late.close();
 
   // 5. The panel controls the same style, and follows changes made from Python.
   await pyOk('handle.reset_style()');
   await settle();
-  assert.deepEqual(await H(() => window.__hyperloomHandle.getStyle()), {});
+  assert.deepEqual(await H(() => window.__plexgraphHandle.getStyle()), {});
   assert.equal(await page.getByLabel('Node size').inputValue(), '10');
   await pyOk('handle.style(node_size=22, edge_curvature=0.35, node_alpha=0.6)');
   await settle();
@@ -158,14 +158,14 @@ try {
   await setSlider('Node size', 18);
   await setSlider('Edge width', 3);
   await settle();
-  const fromPanel = await H(() => window.__hyperloomHandle.getStyle());
+  const fromPanel = await H(() => window.__plexgraphHandle.getStyle());
   assert.equal(fromPanel.node.size, 18); assert.equal(fromPanel.edge.width, 3);
   assert.equal(await page.getByLabel('Node size', { exact: true }).inputValue(), '18');
 
   await page.getByLabel('Node color mode').selectOption('attr:team');
   await page.getByLabel('Node palette').selectOption('Set2');
   await settle();
-  assert.deepEqual((await H(() => window.__hyperloomHandle.getStyle())).node.color, { kind: 'attribute', attribute: 'team', scale: 'categorical', palette: 'Set2' });
+  assert.deepEqual((await H(() => window.__plexgraphHandle.getStyle())).node.color, { kind: 'attribute', attribute: 'team', scale: 'categorical', palette: 'Set2' });
   assert.equal(await legendRows(), 3);
   assert.equal(await page.getByLabel('Color by', { exact: true }).first().inputValue(), 'team', 'the quick Color by control follows too');
 
@@ -173,7 +173,7 @@ try {
   await page.getByLabel('Node colormap', { exact: true }).selectOption('magma');
   await page.getByLabel('Reverse node colormap').check();
   await settle();
-  assert.deepEqual((await H(() => window.__hyperloomHandle.getStyle())).node.color, { kind: 'attribute', attribute: 'score', scale: 'continuous', colormap: 'magma', reverse: true });
+  assert.deepEqual((await H(() => window.__plexgraphHandle.getStyle())).node.color, { kind: 'attribute', attribute: 'score', scale: 'continuous', colormap: 'magma', reverse: true });
   await page.getByLabel('Node color mode').selectOption('timeBucket');
   await settle();
   assert.equal(await legendRows(), 6, 'coloring nodes by time bucket');
@@ -197,7 +197,7 @@ try {
   await page.getByRole('button', { name: 'Clear painting' }).click();
   await page.getByRole('button', { name: 'Reset appearance' }).click();
   await settle();
-  assert.deepEqual(await H(() => window.__hyperloomHandle.getStyle()), {});
+  assert.deepEqual(await H(() => window.__plexgraphHandle.getStyle()), {});
   assert.equal(await page.locator('#tools select[aria-label="Color by"]').inputValue(), '');
 
   assert.deepEqual(errors, []);

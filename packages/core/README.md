@@ -1,3 +1,3 @@
-# hyperloom-core
+# plexgraph-core
 
-Core graph model (IR), algorithms, and I/O for [hyperloom](../../README.md).
+Core graph model (IR), algorithms, and I/O for [plexgraph](../../README.md).

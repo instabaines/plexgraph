@@ -25,16 +25,16 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
-from hyperloom_bridge.color import parse_color
-from hyperloom_bridge.server import BridgeServer
-from hyperloom_bridge.style import STYLE_OPTIONS, StyleController
-from hyperloom_core.model.ir import Graph
+from plexgraph_bridge.color import parse_color
+from plexgraph_bridge.server import BridgeServer
+from plexgraph_bridge.style import STYLE_OPTIONS, StyleController
+from plexgraph_core.model.ir import Graph
 
-logger = logging.getLogger("hyperloom_bridge.launcher")
+logger = logging.getLogger("plexgraph_bridge.launcher")
 
 # Where the viewer's static files live, in order of preference:
-#   1. hyperloom_bridge/static, the built app bundled into the wheel (an installed package);
-#   2. packages/app/dist, the built app in a repo checkout (this file is packages/bridge/hyperloom_bridge/
+#   1. plexgraph_bridge/static, the built app bundled into the wheel (an installed package);
+#   2. packages/app/dist, the built app in a repo checkout (this file is packages/bridge/plexgraph_bridge/
 #      launcher.py, so parents[2] is packages/);
 #   3. packages/app/public, a placeholder usable before the frontend has been built.
 _APP_BUNDLED = Path(__file__).resolve().parent / "static"
@@ -339,7 +339,7 @@ def show(
     {node_key: text} for fully custom text. Off by default.
 
     **networkx-style styling.** Beyond the options above, show() takes the
-    options in `hyperloom_bridge.style.STYLE_OPTIONS`; the same options work
+    options in `plexgraph_bridge.style.STYLE_OPTIONS`; the same options work
     live on the returned handle (`handle.style(...)`):
 
         show(g, node_color=[...numbers...], cmap="viridis")       # one number per node -> colormap
@@ -397,7 +397,7 @@ def show(
 
     ready = threading.Event()
     bound_ws_port: list[int] = []
-    stop_bridge: list[Callable[[], None]] = []
+    stop_bridge: list[Callable[[], Any]] = []
 
     def _run_bridge_loop() -> None:
         loop = asyncio.new_event_loop()
@@ -437,7 +437,7 @@ def show(
     if not app_dir.exists():
         logger.warning(
             "no static frontend found at %s, %s or %s; the bridge is running but there is "
-            "nothing to serve yet. From a checkout, build it with `pnpm --filter @hyperloom/app build`.",
+            "nothing to serve yet. From a checkout, build it with `pnpm --filter @plexgraph/app build`.",
             _APP_BUNDLED,
             _APP_DIST,
             _APP_PUBLIC,

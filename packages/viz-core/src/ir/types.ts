@@ -1,4 +1,4 @@
-// TypeScript mirror of hyperloom_core/wire/protocol.py's payload shapes.
+// TypeScript mirror of plexgraph_core/wire/protocol.py's payload shapes.
 // Keeping this in lockstep with the Python side is the main integration
 // risk across the project (see docs/architecture/plan.md, critical files).
 // Every field from the IR is represented here from Phase A onward — layer,

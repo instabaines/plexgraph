@@ -1,4 +1,4 @@
-"""Core intermediate representation (IR) for hyperloom.
+"""Core intermediate representation (IR) for plexgraph.
 
 Design: a single relation primitive (`Connector`) generalizes edges and
 hyperedges, parameterized along three independent axes — layer, time, and

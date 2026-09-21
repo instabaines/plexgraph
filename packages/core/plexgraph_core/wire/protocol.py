@@ -17,8 +17,8 @@ from typing import Any
 import msgpack
 import numpy as np
 
-from hyperloom_core.algorithms.layout import LayoutStep
-from hyperloom_core.model.ir import Graph, NEG_INF, POS_INF
+from plexgraph_core.algorithms.layout import LayoutStep
+from plexgraph_core.model.ir import Graph, NEG_INF, POS_INF
 
 WIRE_PROTOCOL_VERSION = 1
 

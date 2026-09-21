@@ -1,6 +1,6 @@
 import pytest
 
-from hyperloom_bridge.color import parse_color
+from plexgraph_bridge.color import parse_color
 
 
 def test_passes_through_01_range_array():

@@ -2,9 +2,9 @@ import time
 
 import numpy as np
 
-from hyperloom_core.algorithms.layout import LayoutStep
-from hyperloom_core.model.ir import Graph
-from hyperloom_core.wire.protocol import decode, encode_graph, encode_layout_step
+from plexgraph_core.algorithms.layout import LayoutStep
+from plexgraph_core.model.ir import Graph
+from plexgraph_core.wire.protocol import decode, encode_graph, encode_layout_step
 
 
 def test_encode_decode_plain_graph_roundtrip():
@@ -100,7 +100,7 @@ def test_integers_a_browser_cannot_hold_exactly_travel_as_text():
 
 
 def test_loader_keeps_names_that_only_look_like_numbers(tmp_path):
-    from hyperloom_core import read_temporal_edgelist
+    from plexgraph_core import read_temporal_edgelist
     f = tmp_path / "e.txt"
     f.write_text("24811812513198111524 007 1\n5 -3 2\n")
     keys = [n.key for n in read_temporal_edgelist(f).nodes()]

@@ -1,7 +1,7 @@
 import numpy as np
 
-from hyperloom_core.algorithms.layout import force_directed_layout
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.algorithms.layout import force_directed_layout
+from plexgraph_core.model.ir import Graph
 
 
 def _path_graph(n: int) -> Graph:
@@ -111,7 +111,7 @@ def test_cooling_does_not_report_false_convergence():
 
 
 def test_exact_repulsion_matches_dense_reference():
-    from hyperloom_core.algorithms.layout import _repulsion
+    from plexgraph_core.algorithms.layout import _repulsion
     p = np.random.default_rng(0).normal(size=(300, 2))
     delta = p[:, None, :] - p[None, :, :]
     d2 = np.maximum(np.sum(delta * delta, axis=2), (.1 * .05) ** 2)
@@ -120,7 +120,7 @@ def test_exact_repulsion_matches_dense_reference():
 
 
 def test_mesh_repulsion_remains_active_and_finite():
-    from hyperloom_core.algorithms.layout import _repulsion
+    from plexgraph_core.algorithms.layout import _repulsion
     p = np.random.default_rng(4).uniform(-1, 1, (6000, 2))
     f = _repulsion(p, .01, False)
     assert np.isfinite(f).all()

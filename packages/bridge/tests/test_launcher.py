@@ -4,8 +4,8 @@ import msgpack
 import pytest
 import websockets
 
-from hyperloom_bridge.launcher import _build_style_dict, _in_jupyter, _viewer_url, show
-from hyperloom_core.model.ir import Graph
+from plexgraph_bridge.launcher import _build_style_dict, _in_jupyter, _viewer_url, show
+from plexgraph_core.model.ir import Graph
 
 
 def _small_graph() -> Graph:
@@ -28,7 +28,7 @@ async def test_show_serves_static_app_and_streams_graph():
         return_handle=True,
     )
     assert handle.http_port is not None, (
-        "expected packages/app/dist to exist (run `pnpm --filter @hyperloom/app build`); "
+        "expected packages/app/dist to exist (run `pnpm --filter @plexgraph/app build`); "
         "the built app is required for this end-to-end check"
     )
 
@@ -37,7 +37,7 @@ async def test_show_serves_static_app_and_streams_graph():
     with urllib.request.urlopen(f"http://localhost:{handle.http_port}/index.html") as resp:
         assert resp.status == 200
         html = resp.read().decode()
-    assert "<title>hyperloom</title>" in html
+    assert "<title>plexgraph</title>" in html
 
     async with websockets.connect(f"ws://localhost:{handle.ws_port}") as ws:
         first = msgpack.unpackb(await ws.recv(), raw=False)
@@ -161,12 +161,12 @@ def test_show_handle_closes_servers_idempotently():
 
 def _write_app(directory):
     directory.mkdir(parents=True)
-    (directory / "index.html").write_text("<title>hyperloom</title>")
+    (directory / "index.html").write_text("<title>plexgraph</title>")
     return directory
 
 
 def test_static_app_prefers_the_bundled_copy_then_the_repo_build_then_the_placeholder(tmp_path, monkeypatch):
-    from hyperloom_bridge import launcher
+    from plexgraph_bridge import launcher
 
     bundled, dist, public = tmp_path / "static", tmp_path / "dist", tmp_path / "public"
     monkeypatch.setattr(launcher, "_APP_BUNDLED", bundled)
@@ -181,7 +181,7 @@ def test_static_app_prefers_the_bundled_copy_then_the_repo_build_then_the_placeh
 
 
 def test_an_empty_build_directory_is_not_mistaken_for_a_frontend(tmp_path, monkeypatch):
-    from hyperloom_bridge import launcher
+    from plexgraph_bridge import launcher
 
     (tmp_path / "static").mkdir()
     monkeypatch.setattr(launcher, "_APP_BUNDLED", tmp_path / "static")

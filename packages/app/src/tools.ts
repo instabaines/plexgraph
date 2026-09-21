@@ -1,4 +1,4 @@
-import type { AttributeSummary, NodeFilter, ViewerHandle } from "@hyperloom/viz-core";
+import type { AttributeSummary, NodeFilter, ViewerHandle } from "@plexgraph/viz-core";
 
 const MAX_SELECTED = 8;
 

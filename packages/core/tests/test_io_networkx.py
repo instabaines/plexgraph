@@ -1,6 +1,6 @@
 import networkx as nx
 
-from hyperloom_core.io import from_networkx
+from plexgraph_core.io import from_networkx
 
 
 def test_from_networkx_undirected_graph():

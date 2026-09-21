@@ -1,0 +1,58 @@
+# Metadata for the published `plexgraph` distribution. scripts/build_release.py copies this into a staging tree next to the
+# packages it ships, replacing @VERSION@ with the contents of the VERSION file. Edit release metadata here.
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "plexgraph"
+version = "@VERSION@"
+description = "Interactive graph visualization for multilayer, temporal and hypergraph networks, in notebooks and the browser."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Ridwan Amure (Instabaines)" }]
+keywords = ["graph", "network", "visualization", "hypergraph", "temporal network", "multilayer", "webgl", "jupyter"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Jupyter",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.26",
+    "msgpack>=1.0",
+    "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+pandas = ["pandas>=2.0"]
+networkx = ["networkx>=3.0"]
+jupyter = ["ipython"]
+all = ["pandas>=2.0", "networkx>=3.0", "ipython"]
+
+[project.urls]
+Homepage = "https://github.com/instabaines/plexgraph"
+Documentation = "https://github.com/instabaines/plexgraph/blob/master/docs/user-guide.md"
+Repository = "https://github.com/instabaines/plexgraph"
+Issues = "https://github.com/instabaines/plexgraph/issues"
+Changelog = "https://github.com/instabaines/plexgraph/blob/master/CHANGELOG.md"
+
+[project.scripts]
+plexgraph = "plexgraph.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["plexgraph", "plexgraph_core", "plexgraph_bridge"]
+
+[tool.hatch.build.targets.sdist]
+include = ["plexgraph", "plexgraph_core", "plexgraph_bridge", "LICENSE", "README.md", "CHANGELOG.md"]

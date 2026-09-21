@@ -129,8 +129,8 @@ def load_dataset(name: str):
     return dict(name=name, n=n, edges=_clean(edges, n), labels=labels)
 
 
-def build_hyperloom_graph(ds):
-    from hyperloom_core import Graph
+def build_plexgraph_graph(ds):
+    from plexgraph_core import Graph
     g = Graph()
     labels = ds["labels"]
     for i in range(ds["n"]):
@@ -142,9 +142,9 @@ def build_hyperloom_graph(ds):
 
 # ------------------------------------------------------------------ engines
 
-def layout_hyperloom(ds, seed=0, iterations=100):
-    from hyperloom_core.algorithms.layout import force_directed_layout
-    g = build_hyperloom_graph(ds)
+def layout_plexgraph(ds, seed=0, iterations=100):
+    from plexgraph_core.algorithms.layout import force_directed_layout
+    g = build_plexgraph_graph(ds)
     last = None
     for last in force_directed_layout(g, seed=seed, iterations=iterations):
         pass
@@ -190,7 +190,7 @@ def layout_igraph_kk(ds, seed=0, **_):
 # name -> (function, max nodes it is asked to run at)
 ENGINES = {
     "random": (layout_random, 10 ** 9),
-    "hyperloom": (layout_hyperloom, 10 ** 9),
+    "plexgraph": (layout_plexgraph, 10 ** 9),
     "igraph-fr": (layout_igraph_fr, 25_000),
     "igraph-drl": (layout_igraph_drl, 60_000),
     "igraph-kk": (layout_igraph_kk, 1_500),

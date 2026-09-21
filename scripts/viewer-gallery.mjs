@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const arg = (k, d) => (process.argv.find(a => a.startsWith(`--${k}=`)) ?? `=${d}`).split('=').slice(1).join('=');
 const datasets = arg('datasets', 'karate,sbm1000,sbm5000,sbm20000').split(',');
-const out = arg('out', '/tmp/hyperloom-viewer'); mkdirSync(out, { recursive: true });
+const out = arg('out', '/tmp/plexgraph-viewer'); mkdirSync(out, { recursive: true });
 const root = fileURLToPath(new URL('..', import.meta.url));
 
 async function serve(name) {
@@ -36,13 +36,13 @@ try {
       page.on('requestfailed', r => errors.push('requestfailed ' + r.url()));
       page.on('response', r => { if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`); });
       await page.goto(server.url);
-      await page.waitForFunction(() => window.__hyperloomHandle?.getVisibleEdgeCount?.() > 0, null, { timeout: 120000 });
+      await page.waitForFunction(() => window.__plexgraphHandle?.getVisibleEdgeCount?.() > 0, null, { timeout: 120000 });
       await page.waitForTimeout(5000);
       await page.screenshot({ path: `${out}/viewer-${name}.png` });
       row.controls = await page.evaluate(() => ({
         buttons: [...document.querySelectorAll('button')].map(b => b.getAttribute('aria-label') || b.textContent.trim()).filter(Boolean),
         inputs: [...document.querySelectorAll('input,select')].map(i => `${i.type || i.tagName}:${i.getAttribute('aria-label') || i.placeholder || i.id || ''}`),
-        methods: Object.keys(window.__hyperloomHandle).sort(),
+        methods: Object.keys(window.__plexgraphHandle).sort(),
         caption: [...document.querySelectorAll('div,span')].map(e => e.textContent.trim()).find(t => /density overview/i.test(t) && t.length < 200) || null,
       }));
       row.pixels = await page.evaluate(() => {
@@ -59,33 +59,33 @@ try {
         }
         return { translucentPixels: translucent, invalidPremultipliedPixels: invalidPremultiplied, inkPixels: ink, totalPixels: c.width * c.height };
       });
-      row.visibleEdges = await page.evaluate(() => window.__hyperloomHandle.getVisibleEdgeCount());
-      row.nodes = await page.evaluate(() => window.__hyperloomHandle.getVisibleNodeCount());
-      row.lod = { initial: await page.evaluate(() => window.__hyperloomHandle.getLodState()) };
+      row.visibleEdges = await page.evaluate(() => window.__plexgraphHandle.getVisibleEdgeCount());
+      row.nodes = await page.evaluate(() => window.__plexgraphHandle.getVisibleNodeCount());
+      row.lod = { initial: await page.evaluate(() => window.__plexgraphHandle.getLodState()) };
       if (row.nodes > 5000) {   // can a person get from the overview to individual nodes?
-        await page.evaluate(() => window.__hyperloomHandle.zoomBy(12));
+        await page.evaluate(() => window.__plexgraphHandle.zoomBy(12));
         await page.waitForTimeout(1200);
-        row.lod.zoomed = await page.evaluate(() => window.__hyperloomHandle.getLodState());
+        row.lod.zoomed = await page.evaluate(() => window.__plexgraphHandle.getLodState());
         await page.screenshot({ path: `${out}/viewer-${name}-zoom.png` });
-        await page.evaluate(() => window.__hyperloomHandle.fitView());
+        await page.evaluate(() => window.__plexgraphHandle.fitView());
         await page.waitForTimeout(1200);
       }
       // Restyle the viewer (colormap and size by degree, outlines, translucent edges): how long does it take, and how does it look?
       row.styleMs = await page.evaluate(() => {
         const start = performance.now();
-        window.__hyperloomHandle.setStyle({ node: { color: { kind: 'degree', colormap: 'plasma' }, size: { kind: 'degree', range: [4, 18], scale: 'sqrt' }, outline: { color: '#ffffff', width: 1 } }, edge: { opacity: 0.4 } });
+        window.__plexgraphHandle.setStyle({ node: { color: { kind: 'degree', colormap: 'plasma' }, size: { kind: 'degree', range: [4, 18], scale: 'sqrt' }, outline: { color: '#ffffff', width: 1 } }, edge: { opacity: 0.4 } });
         return Math.round(performance.now() - start);
       });
       await page.waitForTimeout(900);
       await page.screenshot({ path: `${out}/viewer-${name}-styled.png` });
-      await page.evaluate(() => window.__hyperloomHandle.resetStyle());
+      await page.evaluate(() => window.__plexgraphHandle.resetStyle());
       await page.waitForTimeout(400);
-      const hit = await page.evaluate(() => window.__hyperloomHandle.searchNodes('1')[0]?.id ?? null);
+      const hit = await page.evaluate(() => window.__plexgraphHandle.searchNodes('1')[0]?.id ?? null);
       if (hit !== null) {
-        await page.evaluate(id => window.__hyperloomHandle.focusNeighborhood(id), hit);
+        await page.evaluate(id => window.__plexgraphHandle.focusNeighborhood(id), hit);
         await page.waitForTimeout(1500);
-        row.focusInfo = await page.evaluate(id => window.__hyperloomHandle.inspectNode(id), hit);
-        row.focusVisibleEdges = await page.evaluate(() => window.__hyperloomHandle.getVisibleEdgeCount());
+        row.focusInfo = await page.evaluate(id => window.__plexgraphHandle.inspectNode(id), hit);
+        row.focusVisibleEdges = await page.evaluate(() => window.__plexgraphHandle.getVisibleEdgeCount());
         await page.screenshot({ path: `${out}/viewer-${name}-focus.png` });
       }
       row.errors = [...new Set(errors)];

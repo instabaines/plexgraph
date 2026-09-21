@@ -15,7 +15,7 @@ as if they were algorithm-only measurements.
 ```sh
 python benchmarks/layout_audit.py --suite quick --output /tmp/layout-quick.json
 python benchmarks/layout_audit.py --suite scale --timeout 20 --memory-mb 1024 --output /tmp/layout-scale.json
-pnpm --filter @hyperloom/app dev --host 127.0.0.1
+pnpm --filter @plexgraph/app dev --host 127.0.0.1
 # Separate terminal:
 node scripts/benchmark-render.mjs --sizes=1000,10000,100000 --output=/tmp/browser.json
 ```
@@ -146,11 +146,11 @@ and whether the shipped viewer is *usable*; see sections 2-4 and 12 of
 ```sh
 pip install -r benchmarks/requirements.txt
 python benchmarks/quality_report.py --out benchmarks/results/quality      # ~4 min
-pnpm --filter @hyperloom/app build
+pnpm --filter @plexgraph/app build
 PYTHON_PATH=$(which python) node scripts/viewer-gallery.mjs --out=benchmarks/results/quality
 ```
 
-`quality_report.py` compares hyperloom with igraph (FR, DrL, Kamada-Kawai) and networkx spring
+`quality_report.py` compares plexgraph with igraph (FR, DrL, Kamada-Kawai) and networkx spring
 layouts on karate, Les Miserables, a tree, a grid, planted-community graphs (1K/5K/20K), a
 scale-free graph and the SNAP Facebook network, using stress, neighbourhood precision, community
 silhouette, edge-length uniformity, crossing density and node overlap. `viewer-gallery.mjs` opens the

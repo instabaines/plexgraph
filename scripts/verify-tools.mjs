@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const server = spawn(process.env.PYTHON_PATH || 'python3', ['-u', '-c', `
 import json, threading
-from hyperloom_core import Graph
-from hyperloom_bridge import show
+from plexgraph_core import Graph
+from plexgraph_bridge import show
 g = Graph()
 for i in range(60): g.add_node(i, team=['red','green','blue'][i % 3], score=i * 1.5)
 for i in range(49): g.add_edge(i, i + 1)
@@ -33,39 +33,39 @@ try {
   const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(url);
   const H = fn => page.evaluate(fn);
-  await page.waitForFunction(() => window.__hyperloomHandle?.getVisibleNodeCount?.() === 60 && window.__hyperloomHandle.getNodeAttributes().length === 2);
+  await page.waitForFunction(() => window.__plexgraphHandle?.getVisibleNodeCount?.() === 60 && window.__plexgraphHandle.getNodeAttributes().length === 2);
   await page.waitForTimeout(1500);
 
   // Style: colour by a categorical attribute produces a legend; size by degree is recorded.
   await page.getByLabel('Color by').selectOption('team');
   await page.waitForFunction(() => document.querySelectorAll('#node-color-legend .row').length === 3);
   await page.getByLabel('Size by').selectOption('degree');
-  assert.equal(await H(() => window.__hyperloomHandle.getVisibleNodeCount()), 60);
+  assert.equal(await H(() => window.__plexgraphHandle.getVisibleNodeCount()), 60);
   assert.deepEqual(await page.getByLabel('Size by').locator('option').allTextContents(), ['Uniform', 'Degree', 'score']);
   await page.getByLabel('Size by').selectOption('');   // large marks overlap on this tight chain, and the one on top would take the click
 
   // Filter by categorical value: 20 nodes are red; edges need both endpoints visible.
   await page.getByLabel('Filter attribute').selectOption('team');
   await page.locator('#tools .values label', { hasText: 'red' }).locator('input').check();
-  await page.waitForFunction(() => window.__hyperloomHandle.getVisibleNodeCount() === 20);
-  assert.equal(await H(() => window.__hyperloomHandle.getVisibleEdgeCount()), 1, 'red nodes are 0,3,6,...; only the hub link 0-30 joins two of them');
+  await page.waitForFunction(() => window.__plexgraphHandle.getVisibleNodeCount() === 20);
+  assert.equal(await H(() => window.__plexgraphHandle.getVisibleEdgeCount()), 1, 'red nodes are 0,3,6,...; only the hub link 0-30 joins two of them');
   // Filter by degree: hub 0 (deg 4) and 10/20/30 (deg 3) have degree >= 3.
   await page.getByRole('button', { name: 'Reset filter' }).click();
-  assert.equal(await H(() => window.__hyperloomHandle.getVisibleNodeCount()), 60);
+  assert.equal(await H(() => window.__plexgraphHandle.getVisibleNodeCount()), 60);
   await page.getByLabel('Minimum degree').fill('3'); await page.getByLabel('Minimum degree').dispatchEvent('change');
-  await page.waitForFunction(() => window.__hyperloomHandle.getVisibleNodeCount() === 4);
-  assert.equal(await H(() => window.__hyperloomHandle.getVisibleEdgeCount()), 3);
+  await page.waitForFunction(() => window.__plexgraphHandle.getVisibleNodeCount() === 4);
+  assert.equal(await H(() => window.__plexgraphHandle.getVisibleEdgeCount()), 3);
   // Numeric range filter on score (0..88.5): keep score <= 15 -> nodes 0..10.
   await page.getByLabel('Minimum degree').fill('0'); await page.getByLabel('Minimum degree').dispatchEvent('change');
   await page.getByLabel('Filter attribute').selectOption('score');
   await page.getByLabel('score maximum').fill('15'); await page.getByLabel('score maximum').dispatchEvent('change');
-  await page.waitForFunction(() => window.__hyperloomHandle.getVisibleNodeCount() === 11);
+  await page.waitForFunction(() => window.__plexgraphHandle.getVisibleNodeCount() === 11);
   await page.getByRole('button', { name: 'Reset filter' }).click();
-  await page.waitForFunction(() => window.__hyperloomHandle.getVisibleNodeCount() === 60);
+  await page.waitForFunction(() => window.__plexgraphHandle.getVisibleNodeCount() === 60);
 
   // Select two nodes by clicking them on the canvas, then find the route between them.
   const clickNode = async id => {
-    const [x, y] = await page.evaluate(i => window.__hyperloomHandle.getNodeScreenPosition(i), id);
+    const [x, y] = await page.evaluate(i => window.__plexgraphHandle.getNodeScreenPosition(i), id);
     const box = await page.locator('canvas#canvas').boundingBox();
     await page.mouse.move(box.x + x, box.y + y); await page.waitForTimeout(150);
     await page.mouse.click(box.x + x, box.y + y); await page.waitForTimeout(150);
@@ -75,19 +75,19 @@ try {
   await page.getByRole('button', { name: 'Unselect 25' }).waitFor();
   await page.getByRole('button', { name: 'Find path' }).click();
   await page.getByText('11 hops:', { exact: false }).waitFor();
-  assert.equal(await H(() => window.__hyperloomHandle.getVisibleNodeCount()), 12);
+  assert.equal(await H(() => window.__plexgraphHandle.getVisibleNodeCount()), 12);
   await page.getByRole('button', { name: 'Show all nodes' }).click();
-  assert.equal(await H(() => window.__hyperloomHandle.getVisibleNodeCount()), 60);
+  assert.equal(await H(() => window.__plexgraphHandle.getVisibleNodeCount()), 60);
   // Unreachable pair reports honestly and leaves the graph as it was.
   await page.getByRole('button', { name: 'Clear selection' }).click();
-  await H(() => window.__hyperloomHandle.focusNeighborhood(null));
+  await H(() => window.__plexgraphHandle.focusNeighborhood(null));
   await clickNode(5); await clickNode(59);
   await page.getByRole('button', { name: 'Find path' }).click();
   await page.getByText('No route between 5 and 59.').waitFor();
-  assert.equal(await H(() => window.__hyperloomHandle.getVisibleNodeCount()), 60);
+  assert.equal(await H(() => window.__plexgraphHandle.getVisibleNodeCount()), 60);
 
   // Zoom buttons scale distances between nodes by 1.5.
-  const gap = async () => { const [a, b] = await page.evaluate(() => [0, 20].map(i => window.__hyperloomHandle.getNodeScreenPosition(i))); return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+  const gap = async () => { const [a, b] = await page.evaluate(() => [0, 20].map(i => window.__plexgraphHandle.getNodeScreenPosition(i))); return Math.hypot(a[0] - b[0], a[1] - b[1]); };
   const before = await gap();
   await page.getByRole('button', { name: 'Zoom in' }).click(); await page.waitForTimeout(100);
   assert.ok(Math.abs(await gap() / before - 1.5) < 0.02, 'zoom in should scale by 1.5');
@@ -100,9 +100,9 @@ try {
   await page.getByRole('button', { name: 'Unselect 37' }).waitFor();
   await page.getByRole('button', { name: 'Show neighbourhood' }).click();
   await page.getByText('Showing 37 and its neighbours').waitFor();
-  assert.equal(await H(() => window.__hyperloomHandle.getVisibleNodeCount()), 3);
+  assert.equal(await H(() => window.__plexgraphHandle.getVisibleNodeCount()), 3);
   await page.getByRole('button', { name: 'Show all nodes' }).click();
-  await page.screenshot({ path: '/tmp/hyperloom-tools.png' });
+  await page.screenshot({ path: '/tmp/plexgraph-tools.png' });
   assert.deepEqual(errors, []);
   console.log('PASS: colour/size by attribute, value/range/degree filters, click-select, shortest path, unreachable path, zoom, search-select');
 } finally { await browser?.close(); server.kill('SIGTERM'); }

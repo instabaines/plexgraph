@@ -7,8 +7,8 @@ Click "Stack: layers" (top-left) to switch to the stacked-slices view,
 which draws each layer as its own separated plane instead of overlaying
 them — the clearest way to see "layer" as an actual dimension."""
 
-from hyperloom_bridge import show
-from hyperloom_core import Graph
+from plexgraph_bridge import show
+from plexgraph_core import Graph
 
 
 def main() -> None:

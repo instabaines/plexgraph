@@ -2,11 +2,11 @@
 more than 2 nodes) renders as a translucent convex-hull polygon wrapping
 its member nodes, instead of a line — see docs/architecture/plan.md
 section 5. The layout pulls each hyperedge's members together (via
-pairwise clique attraction — see hyperloom_core.algorithms.layout) so the
+pairwise clique attraction — see plexgraph_core.algorithms.layout) so the
 hulls end up visually coherent rather than enclosing scattered nodes."""
 
-from hyperloom_bridge import show
-from hyperloom_core import Graph
+from plexgraph_bridge import show
+from plexgraph_core import Graph
 
 
 def main() -> None:

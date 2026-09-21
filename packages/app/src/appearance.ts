@@ -1,4 +1,4 @@
-import { colormapNames, paletteNames, parseColor, rgbaToHex, type AttributeSummary, type ColorEncoding, type NodeShape, type SizeEncoding, type StyleSpec, type ViewerHandle } from "@hyperloom/viz-core";
+import { colormapNames, paletteNames, parseColor, rgbaToHex, type AttributeSummary, type ColorEncoding, type NodeShape, type SizeEncoding, type StyleSpec, type ViewerHandle } from "@plexgraph/viz-core";
 
 const DEFAULT_NODE_COLOR = "#2a8bf2";
 const DEFAULT_EDGE_COLOR = "#9999a6";

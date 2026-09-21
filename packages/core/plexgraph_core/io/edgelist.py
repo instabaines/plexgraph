@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from typing import Any, Hashable, Iterable, Sequence
 
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.model.ir import Graph
 
 
 def from_edgelist(
-    edges: Iterable[Sequence[Any] | tuple[Hashable, Hashable]],
+    edges: Iterable[Sequence[Any]],
     *,
     directed: bool = False,
 ) -> Graph:
@@ -70,7 +70,7 @@ def from_pandas_edgelist(
     """
     if edge_attr is True:
         attr_columns = [c for c in df.columns if c not in (source, target)]
-    elif edge_attr is None:
+    elif edge_attr is None or edge_attr is False:
         attr_columns = []
     elif isinstance(edge_attr, str):
         attr_columns = [edge_attr]

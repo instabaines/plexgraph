@@ -2,8 +2,12 @@
 
 A practical how-to for building graphs, visualizing them, styling them, and getting data in and
 out. For the one-time setup (venvs, building the frontend), see the [README](../README.md#quick-start)
-first — this guide assumes that's done and `from hyperloom_bridge import show` / `from hyperloom_core
+first — this guide assumes that's done and `from plexgraph_bridge import show` / `from plexgraph_core
 import Graph` work in your shell or notebook.
+
+All of this is also available from one import: `import plexgraph as pg` gives `pg.Graph`, `pg.show`, `pg.by_degree` and the rest
+(the examples below import from `plexgraph_core` and `plexgraph_bridge`, the packages that implement it; `import plexgraph` exposes the same names and is the supported entry point). `python -m plexgraph info` shows the
+installed version and whether the viewer is bundled.
 
 ## Contents
 
@@ -20,12 +24,12 @@ import Graph` work in your shell or notebook.
 
 ## Building a graph
 
-Everything starts from `hyperloom_core.Graph` — one unified structure for plain graphs, directed
+Everything starts from `plexgraph_core.Graph` — one unified structure for plain graphs, directed
 graphs, multiplex/multilayer graphs, temporal graphs, and hypergraphs (see
 [`docs/architecture/plan.md`](architecture/plan.md) for why they're all the same underlying model).
 
 ```python
-from hyperloom_core import Graph
+from plexgraph_core import Graph
 
 g = Graph()
 alice = g.add_node("alice", role="engineer")   # extra kwargs become node attrs
@@ -70,7 +74,7 @@ per event: `u v t` (u and v interacted at time t). Load them directly; you do no
 `t_start`/`t_end` by hand:
 
 ```python
-from hyperloom_core import (from_temporal_edgelist, from_pandas_temporal_edgelist,
+from plexgraph_core import (from_temporal_edgelist, from_pandas_temporal_edgelist,
                             read_temporal_edgelist)
 
 g = read_temporal_edgelist("events.txt")                 # whitespace-separated u v t (# comments ok)
@@ -118,7 +122,7 @@ directed and layered and temporal simultaneously, and so on — see
 ## Visualizing it
 
 ```python
-from hyperloom_bridge import show
+from plexgraph_bridge import show
 
 show(g)
 ```
@@ -185,8 +189,8 @@ Beyond the single-color options above, `show()` takes networkx-style arguments, 
 **live** on the handle while the viewer is open:
 
 ```python
-import hyperloom_bridge as hb
-from hyperloom_bridge import show, by_attribute, by_degree, by_time_bucket, size_by_degree, size_by_weight
+import plexgraph_bridge as hb
+from plexgraph_bridge import show, by_attribute, by_degree, by_time_bucket, size_by_degree, size_by_weight
 
 h = show(g, node_color=by_degree("plasma"), node_size=size_by_degree((6, 26)),
          edgecolors="white", linewidths=1, edge_curvature=0.2, alpha=0.7, return_handle=True)
@@ -250,7 +254,7 @@ that many nodes.) Edge lists follow the graph's connector order, like `G.edges()
 Every color encoding takes `reverse=True`, `vmin`/`vmax` (both, or neither) and `missing=` (the color for elements
 with no value). Colormaps: `viridis plasma inferno magma cividis coolwarm RdBu Spectral Blues Greens Reds Oranges
 Purples Greys YlOrRd`. Categorical palettes: `default tab10 Set1 Set2 Dark2 Paired Pastel1`
-(`hyperloom_bridge.COLORMAPS`, `PALETTES`, `SHAPES`, `STYLE_OPTIONS` list them). Colors given by name accept all 148 CSS names.
+(`plexgraph_bridge.COLORMAPS`, `PALETTES`, `SHAPES`, `STYLE_OPTIONS` list them). Colors given by name accept all 148 CSS names.
 
 ### In the viewer
 
@@ -314,7 +318,7 @@ Click **Export ▾** (top-left) for:
 ## Reading graphs from other sources
 
 ```python
-from hyperloom_core import from_edgelist, from_pandas_edgelist, from_networkx, from_gexf, from_graphml
+from plexgraph_core import from_edgelist, from_pandas_edgelist, from_networkx, from_gexf, from_graphml
 
 g = from_edgelist([("a", "b"), ("b", "c", 2.5)])                   # (u, v) or (u, v, weight) or (u, v, attrs_dict)
 g = from_pandas_edgelist(df, source="src", target="dst", edge_attr=True)

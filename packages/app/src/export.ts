@@ -35,7 +35,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number)
 }
 
 function wrapSvgAsHtml(svg: string): string {
-  return `<!doctype html>\n<html><head><meta charset="utf-8"><title>hyperloom export</title></head>\n<body style="margin:0">\n${svg}\n</body></html>\n`;
+  return `<!doctype html>\n<html><head><meta charset="utf-8"><title>plexgraph export</title></head>\n<body style="margin:0">\n${svg}\n</body></html>\n`;
 }
 
 export async function exportView(

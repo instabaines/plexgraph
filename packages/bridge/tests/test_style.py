@@ -6,12 +6,12 @@ import msgpack
 import numpy as np
 import pytest
 
-from hyperloom_bridge import style as st
-from hyperloom_bridge.style import (
+from plexgraph_bridge import style as st
+from plexgraph_bridge.style import (
     RESET, StyleController, build_style, by_attribute, by_degree, by_time_bucket, by_values, by_weight, merge_style,
     shape_by_attribute, size_by_attribute, size_by_degree, size_by_weight,
 )
-from hyperloom_core import Graph, from_temporal_edgelist
+from plexgraph_core import Graph, from_temporal_edgelist
 
 REPO = Path(__file__).resolve().parents[3]
 

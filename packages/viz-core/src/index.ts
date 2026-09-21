@@ -128,14 +128,14 @@ export function mountViewer(
         try {
           applyStyleMessage(renderer, msg);
         } catch (err) {
-          console.error("[hyperloom] style rejected:", err);
+          console.error("[plexgraph] style rejected:", err);
           options?.onStyleError?.(err);
         }
       }
     },
     onOpen: options?.onOpen,
     onClose: options?.onClose,
-    onError: options?.onError ?? ((err) => console.error("[hyperloom] transport error", err)),
+    onError: options?.onError ?? ((err) => console.error("[plexgraph] transport error", err)),
   });
 
   return {

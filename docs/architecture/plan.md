@@ -59,10 +59,10 @@ Why not WebGPU yet: browser support/tooling maturity and team learning curve mak
 ## 4. Project Structure (monorepo)
 
 ```
-hyperloom/
+plexgraph/
   packages/
     core/                  # Python: IR, graph model, algorithms, IO
-      hyperloom_core/
+      plexgraph_core/
         model/              # Node/Connector/Layer/Graph, IR schema + version field
         algorithms/         # layout (force-directed etc.), centrality, community detection
         io/                 # import/export: networkx/igraph interop, edge lists, GEXF, GraphML
@@ -71,14 +71,14 @@ hyperloom/
       tests/
 
     bridge/                 # Python: local WebSocket server, session/state management
-      hyperloom_bridge/
+      plexgraph_bridge/
         server.py            # WebSocket server (FastAPI/uvicorn)
         session.py            # per-graph live session, incremental/streaming diffs
         launcher.py           # browser-tab launch orchestration
       pyproject.toml
 
     widget/                  # Python + JS: anywidget integration (thin shim, reuses viz-core)
-      hyperloom_widget/
+      plexgraph_widget/
       js/
       pyproject.toml
 

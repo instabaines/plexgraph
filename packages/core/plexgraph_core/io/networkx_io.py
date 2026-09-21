@@ -7,7 +7,7 @@ reachable without reimplementing any of it, e.g.
 are thin convenience wrappers for the two most common file formats.
 
 networkx is an optional dependency: the import is deferred into each
-function body so that importing hyperloom_core.io doesn't require it —
+function body so that importing plexgraph_core.io doesn't require it —
 only actually calling one of these functions does.
 """
 
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from hyperloom_core.model.ir import Graph
+from plexgraph_core.model.ir import Graph
 
 
 def from_networkx(nx_graph: Any) -> Graph:

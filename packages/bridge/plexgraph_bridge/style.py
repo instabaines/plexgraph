@@ -20,9 +20,9 @@ from typing import Any, Callable
 
 import numpy as np
 
-from hyperloom_bridge.color import parse_color
-from hyperloom_core.model.ir import NEG_INF, POS_INF, Graph
-from hyperloom_core.wire.protocol import encode_style
+from plexgraph_bridge.color import parse_color
+from plexgraph_core.model.ir import NEG_INF, POS_INF, Graph
+from plexgraph_core.wire.protocol import encode_style
 
 # Keep in sync with packages/viz-core/src/style/colormaps.ts and spec.ts (a test compares them).
 COLORMAPS = ("viridis", "plasma", "inferno", "magma", "cividis", "coolwarm", "RdBu", "Spectral", "Blues", "Greens",
@@ -348,8 +348,8 @@ def _color_encoding(target: str, value: Any, g: _Graph, *, cmap: Any, vmin: floa
                     index[i] = v
         items = [index.get(i) for i in range(n)]
         if items and all(v is None or (isinstance(v, (int, float, np.number)) and not isinstance(v, bool)) for v in items):
-            arr = np.array([np.nan if v is None else v for v in items], dtype=np.float64)
-            return {"kind": "values", "values": arr, "colormap": _check_cmap(cmap or "viridis"), **_colormap_options(None, False, vmin, vmax, None)}
+            numbers = np.array([np.nan if v is None else v for v in items], dtype=np.float64)
+            return {"kind": "values", "values": numbers, "colormap": _check_cmap(cmap or "viridis"), **_colormap_options(None, False, vmin, vmax, None)}
         flat, present = _colors_from_items(items, what)
         return {"kind": "colors", "colors": flat, "present": present}
     if isinstance(value, (list, np.ndarray)):
@@ -383,24 +383,27 @@ def _size_arg(target: str, value: Any, g: _Graph, what: str) -> Any:
             raise ValueError(f"{what} must be a non-negative number of pixels, got {value}")
         return float(value)
     n = g.count(target)
+    sizes: np.ndarray
     if isinstance(value, Mapping):
-        arr = np.full(n, np.nan)
+        sizes = np.full(n, np.nan)
         for key, v in value.items():
             if target == "node":
                 if key not in g.key_to_id:
                     raise KeyError(f"{what}: unknown node {key!r}")
-                arr[g.key_to_id[key]] = v
+                sizes[g.key_to_id[key]] = v
             else:
                 hits = g.edge_lookup(key)
                 if not hits:
                     raise KeyError(f"{what}: no edge between {key[0]!r} and {key[1]!r}")
-                arr[hits] = v
+                sizes[hits] = v
     else:
-        arr = _numeric_array(value)
-        if arr is None:
+        listed = _numeric_array(value)
+        if listed is None:
             raise TypeError(f"{what} must be a number of pixels, a list/array of numbers, a dict, or an encoding like size_by_degree(); got {type(value).__name__}")
-        if len(arr) != n:
-            raise ValueError(f"{what} has {len(arr)} entries but the graph has {n} {_label(target)}s")
+        if len(listed) != n:
+            raise ValueError(f"{what} has {len(listed)} entries but the graph has {n} {_label(target)}s")
+        sizes = listed
+    arr = sizes
     finite = arr[np.isfinite(arr)]
     if (finite < 0).any():
         raise ValueError(f"{what} must not contain negative sizes")

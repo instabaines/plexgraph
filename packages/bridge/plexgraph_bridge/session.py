@@ -8,9 +8,9 @@ from __future__ import annotations
 import asyncio
 from typing import Awaitable, Callable
 
-from hyperloom_core.algorithms.layout import force_directed_layout
-from hyperloom_core.model.ir import Graph
-from hyperloom_core.wire.protocol import encode_graph, encode_layout_step
+from plexgraph_core.algorithms.layout import force_directed_layout
+from plexgraph_core.model.ir import Graph
+from plexgraph_core.wire.protocol import encode_graph, encode_layout_step
 
 Sender = Callable[[bytes], Awaitable[None]]
 

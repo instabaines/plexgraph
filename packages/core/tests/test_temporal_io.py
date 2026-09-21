@@ -3,7 +3,7 @@ import datetime as dt
 import numpy as np
 import pytest
 
-from hyperloom_core import (
+from plexgraph_core import (
     from_pandas_temporal_edgelist,
     from_temporal_edgelist,
     read_temporal_edgelist,

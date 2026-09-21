@@ -1,4 +1,4 @@
-import { formatTime, mountViewer, RendererOptions, rgbaToCss, sampleColormap, SECONDS_PER_DAY, type ColorLegend, type TimeDomain, type TimeMode, type TimeSplit } from "@hyperloom/viz-core";
+import { formatTime, mountViewer, RendererOptions, rgbaToCss, sampleColormap, SECONDS_PER_DAY, type ColorLegend, type TimeDomain, type TimeMode, type TimeSplit } from "@plexgraph/viz-core";
 import { exportView, type ExportFormat } from "./export";
 import { mountAppearance } from "./appearance";
 import { mountTools } from "./tools";
@@ -8,7 +8,7 @@ function parseStyleParam(raw: string | null): RendererOptions {
   try {
     return JSON.parse(raw) as RendererOptions;
   } catch (err) {
-    console.error("[hyperloom] failed to parse ?style= param", err);
+    console.error("[plexgraph] failed to parse ?style= param", err);
     return {};
   }
 }
@@ -291,7 +291,7 @@ if (!wsPort) {
 
   // Exposed for local debugging / automated visual verification only —
   // not part of the public viz-core API surface.
-  (window as unknown as { __hyperloomHandle: typeof handle }).__hyperloomHandle = handle;
+  (window as unknown as { __plexgraphHandle: typeof handle }).__plexgraphHandle = handle;
 
   function applyTimeFilter(): void {
     const t = Number(timelineSlider.value);
@@ -378,7 +378,7 @@ if (!wsPort) {
       try {
         await exportView(format, canvas, () => handle.exportSVG());
       } catch (err) {
-        console.error("[hyperloom] export failed", err);
+        console.error("[plexgraph] export failed", err);
       }
     });
   });
