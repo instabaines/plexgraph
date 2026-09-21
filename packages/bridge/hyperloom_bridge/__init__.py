@@ -1,4 +1,41 @@
 from hyperloom_bridge.launcher import show
 from hyperloom_bridge.server import BridgeServer
+from hyperloom_bridge.style import (
+    COLORMAPS,
+    PALETTES,
+    RESET,
+    SHAPES,
+    STYLE_OPTIONS,
+    by_attribute,
+    by_degree,
+    by_time,
+    by_time_bucket,
+    by_values,
+    by_weight,
+    shape_by_attribute,
+    size_by_attribute,
+    size_by_degree,
+    size_by_time,
+    size_by_weight,
+)
 
-__all__ = ["show", "BridgeServer"]
+__all__ = [
+    "show",
+    "BridgeServer",
+    "RESET",
+    "COLORMAPS",
+    "PALETTES",
+    "SHAPES",
+    "STYLE_OPTIONS",
+    "by_attribute",
+    "by_degree",
+    "by_time",
+    "by_time_bucket",
+    "by_values",
+    "by_weight",
+    "shape_by_attribute",
+    "size_by_attribute",
+    "size_by_degree",
+    "size_by_time",
+    "size_by_weight",
+]

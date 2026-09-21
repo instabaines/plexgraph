@@ -23,6 +23,32 @@ export interface NodeFilter {
 
 const MAX_CATEGORIES = 200;
 
+/** Per-attribute value summary of any list of items with `attrs` (nodes or connectors). */
+export function summarizeAttributes(items: { attrs: Record<string, unknown> }[], valueLimit = 30): AttributeSummary[] {
+  const names = new Set<string>();
+  for (const node of items) for (const key of Object.keys(node.attrs)) names.add(key);
+  const out: AttributeSummary[] = [];
+  for (const name of names) {
+    const counts = new Map<string, number>();
+    let numeric = true, min = Infinity, max = -Infinity;
+    for (const node of items) {
+      const v = node.attrs[name];
+      if (v === undefined || v === null) continue;
+      if (typeof v !== "number" || !Number.isFinite(v)) numeric = false;
+      else { min = Math.min(min, v); max = Math.max(max, v); }
+      const key = typeof v === "object" ? JSON.stringify(v) : String(v);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    if (!counts.size) continue;
+    if (numeric && counts.size > 12) out.push({ name, kind: "numeric", distinct: counts.size, min, max });
+    else if (counts.size <= MAX_CATEGORIES) {
+      const values = Array.from(counts, ([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value)).slice(0, valueLimit);
+      out.push({ name, kind: "categorical", distinct: counts.size, values, ...(numeric ? { min, max } : {}) });
+    } else out.push({ name, kind: "text", distinct: counts.size });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Incidence index stays linear in hyperedge memberships; never expands cliques. */
 export class GraphIndex {
   private incident: number[][];
@@ -65,28 +91,7 @@ export class GraphIndex {
 
   /** Per-attribute value summary used to build colour, size and filter controls. */
   attributeSummary(valueLimit = 30): AttributeSummary[] {
-    const names = new Set<string>();
-    for (const node of this.nodes) for (const key of Object.keys(node.attrs)) names.add(key);
-    const out: AttributeSummary[] = [];
-    for (const name of names) {
-      const counts = new Map<string, number>();
-      let numeric = true, min = Infinity, max = -Infinity;
-      for (const node of this.nodes) {
-        const v = node.attrs[name];
-        if (v === undefined || v === null) continue;
-        if (typeof v !== "number" || !Number.isFinite(v)) numeric = false;
-        else { min = Math.min(min, v); max = Math.max(max, v); }
-        const key = typeof v === "object" ? JSON.stringify(v) : String(v);
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-      }
-      if (!counts.size) continue;
-      if (numeric && counts.size > 12) out.push({ name, kind: "numeric", distinct: counts.size, min, max });
-      else if (counts.size <= MAX_CATEGORIES) {
-        const values = Array.from(counts, ([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value)).slice(0, valueLimit);
-        out.push({ name, kind: "categorical", distinct: counts.size, values, ...(numeric ? { min, max } : {}) });
-      } else out.push({ name, kind: "text", distinct: counts.size });
-    }
-    return out.sort((a, b) => a.name.localeCompare(b.name));
+    return summarizeAttributes(this.nodes, valueLimit);
   }
 
   /** Ids of nodes passing every criterion of the filter (all criteria combine with AND). */

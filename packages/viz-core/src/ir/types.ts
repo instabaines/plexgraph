@@ -51,7 +51,28 @@ export interface LayoutStepMessage {
   positions: Uint8Array;
 }
 
-export type WireMessage = GraphMessage | LayoutStepMessage;
+/** A change to how the graph looks, pushed from Python while the viewer is open.
+ *
+ * - `set`: merge `spec` into the current style (fields you omit stay, null clears a field).
+ * - `replace`: reset to the initial style, then apply `spec`. Sent to a viewer that connects late.
+ * - `reset`: back to the initial style and clear painted nodes.
+ * - `paint`: give the nodes in `ids` (a uint32 array) `color`; a null color removes it.
+ * - `clear_paint`: remove every painted color.
+ *
+ * Numeric arrays inside `spec` travel as `{ "$dtype": "f32" | "f64" | "i32" | "u8", "$data": bytes }`. */
+export interface StyleMessage {
+  type: "style";
+  op: "set" | "replace" | "reset" | "paint" | "clear_paint";
+  spec?: unknown;
+  ids?: Uint8Array | number[];
+  color?: number[] | null;
+}
+
+export type WireMessage = GraphMessage | LayoutStepMessage | StyleMessage;
+
+export function isStyleMessage(msg: WireMessage): msg is StyleMessage {
+  return msg.type === "style";
+}
 
 export function isGraphMessage(msg: WireMessage): msg is GraphMessage {
   return msg.type === "graph";

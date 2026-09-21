@@ -10,6 +10,7 @@ import Graph` work in your shell or notebook.
 - [Building a graph](#building-a-graph)
 - [Visualizing it](#visualizing-it)
 - [Styling reference](#styling-reference)
+- [Artistic styling: colors, sizes, shapes, live changes](#artistic-styling)
 - [Interacting with the viewer](#interacting-with-the-viewer)
 - [Exporting](#exporting)
 - [Reading graphs from other sources](#reading-graphs-from-other-sources)
@@ -178,10 +179,99 @@ show(
 )
 ```
 
-**What styling can't do yet**: only one uniform color/size for all nodes and all (non-layered)
-edges — there's no "color nodes by this attribute's value" or per-node/per-edge styling, and no
-node shape (circles only). Both need real new rendering/API work, not just a wider style dict; see
-[Known limitations](#known-limitations).
+## Artistic styling
+
+Beyond the single-color options above, `show()` takes networkx-style arguments, and the same arguments work
+**live** on the handle while the viewer is open:
+
+```python
+import hyperloom_bridge as hb
+from hyperloom_bridge import show, by_attribute, by_degree, by_time_bucket, size_by_degree, size_by_weight
+
+h = show(g, node_color=by_degree("plasma"), node_size=size_by_degree((6, 26)),
+         edgecolors="white", linewidths=1, edge_curvature=0.2, alpha=0.7, return_handle=True)
+
+h.style(node_shape="s")                                # change something, keep the rest
+h.style(edge_color=by_time_bucket(6), edge_width=2)    # color edges by time bucket
+h.color_nodes(["alice", "bob"], "crimson")             # paint specific nodes
+h.clear_colors()
+h.style(node_size=hb.RESET)                            # restore one option's default
+h.reset_style()                                        # back to the default look
+h.get_style()                                          # what is applied now, as plain data
+```
+
+Invalid arguments (an unknown colormap, the wrong number of colors, coloring by time on a graph with no times, a
+typo in an option name) raise in Python straight away and change nothing. A viewer opened later, or a second
+browser tab, shows the current style from its first frame.
+
+### The options
+
+| Option | Accepts | Notes |
+|---|---|---|
+| `node_color`, `edge_color` | one color; a list/array (one per node or edge); a dict; an encoding | see below |
+| `node_size`, `edge_width` | pixels: a number, list/array, dict, or `size_by_...()` | node size is the **diameter** |
+| `node_shape` | `"circle"` `"square"` `"triangle"` `"diamond"` `"cross"` (or `o s ^ d +`); a list/dict; `shape_by_attribute(...)` | |
+| `node_alpha`, `edge_alpha`, `alpha` | 0-1 (`alpha` sets both) | |
+| `node_outline_color`, `node_outline_width` (`edgecolors`, `linewidths`) | color; pixels | |
+| `edge_curvature` (or `connectionstyle="arc3,rad=0.2"`) | -2 to 2; about 0.2 is typical | edges bend into arcs; parallel edges in opposite directions bend apart |
+| `arrow_scale` | 0-20 | scales arrowheads |
+| `cmap`, `vmin`, `vmax` / `edge_cmap`, `edge_vmin`, `edge_vmax` | colormap name, range | used when colors come from numbers |
+| `with_labels`, `label_mode`, `label_size` (`font_size`), `label_color` (`font_color`), `label_halo`, `label_attribute` | | `label_mode` is `"hover"`, `"all"` or `"none"` |
+| `background_color` | color | the whole page follows it |
+
+**One color, one per node, or a mapping.** A string, or a *tuple* of 3-4 numbers, is one color. A **list or NumPy
+array has one entry per node** (or per edge, for `edge_color`); a dict maps node keys (or `(source, target)` pairs)
+to values:
+
+```python
+show(g, node_color="tomato")                         # one color
+show(g, node_color=["red", "#00f", (0, 1, 0), ...])  # one color per node
+show(g, node_color=scores, cmap="viridis")           # one number per node, through a colormap (like matplotlib)
+show(g, node_color={"alice": "red", "bob": 3.5})     # only the named nodes (numbers or colors, not mixed)
+show(g, node_size={"alice": 30})                     # everything else keeps the default size
+```
+
+(For backward compatibility a plain list of 3-4 numbers is still read as one color, unless the graph has exactly
+that many nodes.) Edge lists follow the graph's connector order, like `G.edges()` in networkx.
+
+**Encodings** compute colors, sizes or shapes from the graph itself:
+
+| Encoding | Meaning |
+|---|---|
+| `by_attribute("team", palette="tab10")` | one color per distinct value; a colormap if the attribute is a number with many values (`scale="continuous"` forces it) |
+| `by_degree("viridis")` | nodes, by number of neighbours |
+| `by_weight("Blues")` | edges, by weight |
+| `by_time("plasma")` | a gradient by time: an edge's start, or a node's first activity |
+| `by_time_bucket(6, split="events")` | split the time span into buckets, like the time ribbon, and color by bucket (`split="time"` gives equal durations, `"events"` equal numbers of events). Edges use their start time; nodes use `node_time="first"` or `"last"` activity. With no `cmap` the colors match the ribbon |
+| `by_values(numbers, cmap)` | one number per node or edge (a list passed directly does the same) |
+| `size_by_degree((6, 26))`, `size_by_weight((1, 6))`, `size_by_attribute("score", (4, 24), scale="sqrt")`, `size_by_time(...)` | map onto a pixel range; `scale` is `"linear"`, `"sqrt"` or `"log"` |
+| `shape_by_attribute("team")` | one shape per value |
+
+Every color encoding takes `reverse=True`, `vmin`/`vmax` (both, or neither) and `missing=` (the color for elements
+with no value). Colormaps: `viridis plasma inferno magma cividis coolwarm RdBu Spectral Blues Greens Reds Oranges
+Purples Greys YlOrRd`. Categorical palettes: `default tab10 Set1 Set2 Dark2 Paired Pastel1`
+(`hyperloom_bridge.COLORMAPS`, `PALETTES`, `SHAPES`, `STYLE_OPTIONS` list them). Colors given by name accept all 148 CSS names.
+
+### In the viewer
+
+The right-hand **Appearance** panel does the same without code: color nodes and edges by one color, attribute,
+degree, weight, time or time bucket (with palettes, colormaps, reverse, bucket count and split), node size, shape,
+opacity and outline, edge width (optionally by weight), opacity, curvature and arrow size, labels (on hover, all, or
+none, with size and halo), and the page background. **Paint nodes** colors the nodes you have selected. **Reset
+appearance** goes back to the default look. The panel follows changes made from Python, and the legends show color
+scales: swatches with counts for categories and time buckets, and a gradient bar for colormaps. The same operations
+are on the JavaScript handle: `viewer.setStyle({...})`, `getStyle()`, `resetStyle()`, `paintNodes(ids, color)`,
+`clearPaint()`.
+
+### Exports and limits
+
+- **SVG export matches the screen** for colors, sizes, shapes, outlines, opacity, curved edges and labels. PNG, JPG,
+  HTML and PDF come from the canvas.
+- Above 20,000 drawn edges edges are one pixel wide and straight, but each keeps its color. Curvature applies up to
+  30,000 edges and is ignored beyond that.
+- The stacked (layer atlas and time ribbon) views use node color, size and opacity but draw circles; shape and
+  outline apply to the flat view. The density overview (above 5,000 nodes) shows each cell's dominant color.
+- Styles are per session: a new graph starts from the options given to `show()`.
 
 ## Interacting with the viewer
 
@@ -347,8 +437,8 @@ remain backpressured by the client.
 
 Worth knowing about rather than discovering by surprise:
 
-- **No per-node/per-edge attribute-driven styling** (e.g. "color nodes by this attribute's value",
-  "width by weight") and **no node shape** (circles only) — see [Styling reference](#styling-reference).
+- **Stacked views draw circles only**: node shape and outline apply to the flat view (see
+  [Artistic styling](#artistic-styling)).
 - **Hypergraphs and directed arrows aren't rendered in the stacked view** — switching to
   Stack: layers/time on a graph with hyperedges or directed edges will show plain edges only for
   those connectors.

@@ -183,3 +183,15 @@ Findings recorded by the first run (tiny gaps are noise; see the notebook scorec
   the timeline has a trailing-window mode for point events; ribbon buckets no longer duplicate boundary events.
   `scripts/verify-temporal.mjs` covers the whole path from a `u v t` file. Not yet covered: datetime formatting
   on the time axis (it shows epoch seconds) and very large event streams.
+
+- Styling: `scripts/verify-style.mjs` drives a real Python session end to end: options given to `show()`, then live
+  `handle.style()`, `color_nodes()` and `reset_style()` calls, checking the colors actually drawn (canvas pixels), sizes,
+  shapes and curves in the SVG export, time-bucket legends whose counts add up to the edge count, errors raised in
+  Python without touching the viewer, a second tab receiving the current style, and the Appearance panel following
+  Python. On the 572K-event Reddit graph a node-only restyle takes about 20-60 ms and an edge color change about
+  250-350 ms (edges are drawn as one-pixel lines in per-color groups). The viewer gallery also restyles every dataset
+  and fails the scorecard if that takes over 3 seconds.
+- Fixed while building it: zooming into a large graph while its layout was still streaming stayed stuck in the
+  overview, because each layout step postponed re-evaluating the level of detail; and hovering used the first node
+  drawn where nodes overlap instead of the one on top.
+

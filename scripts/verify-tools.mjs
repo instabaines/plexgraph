@@ -42,6 +42,7 @@ try {
   await page.getByLabel('Size by').selectOption('degree');
   assert.equal(await H(() => window.__hyperloomHandle.getVisibleNodeCount()), 60);
   assert.deepEqual(await page.getByLabel('Size by').locator('option').allTextContents(), ['Uniform', 'Degree', 'score']);
+  await page.getByLabel('Size by').selectOption('');   // large marks overlap on this tight chain, and the one on top would take the click
 
   // Filter by categorical value: 20 nodes are red; edges need both endpoints visible.
   await page.getByLabel('Filter attribute').selectOption('team');

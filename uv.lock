@@ -465,6 +465,8 @@ version = "0.1.0"
 source = { editable = "packages/bridge" }
 dependencies = [
     { name = "hyperloom-core" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "websockets" },
 ]
 
@@ -491,6 +493,7 @@ requires-dist = [
     { name = "jupyter-client", marker = "extra == 'dev'" },
     { name = "nbclient", marker = "extra == 'dev'" },
     { name = "nbformat", marker = "extra == 'dev'" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "websockets", specifier = ">=12.0" },

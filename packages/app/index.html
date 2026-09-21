@@ -151,7 +151,7 @@
       #view-mode button[aria-pressed="true"] { background: #183e51; color: white; }
       #export { top: auto; bottom: 76px; left: 24px; }
       #export-toggle { padding: 9px 16px; border-color: #dce3ea; border-radius: 8px; }
-      #right-panel { top: 24px; right: 24px; max-width: 230px; }
+      #right-panel { top: 24px; right: 24px; max-width: 230px; max-height: calc(100vh - 48px); overflow-y: auto; }
       #right-panel > * { padding: 16px; gap: 10px; border: 1px solid #e1e7ed; border-radius: 12px; box-shadow: 0 4px 18px #26384d08; }
       #timeline { left: 24px; right: 24px; bottom: 20px; border: 1px solid #e1e7ed; border-radius: 12px; padding: 14px 18px; }
       input { accent-color: #183e51; }
@@ -168,24 +168,32 @@
       #node-inspector { white-space:pre-wrap; overflow-wrap:anywhere; max-height:200px; overflow:auto; margin-top:12px; line-height:1.5; }
       .explore-actions { display:flex; gap:6px; }
       @media(max-width:640px) { #explore { top:auto; bottom:130px; left:12px; width:180px; max-height:40vh; overflow:auto; } }
-      #tools { width: 198px; font-size: 12px; }
-      #tools details { border-top: 1px solid #e7ecf1; padding-top: 8px; }
-      #tools details:first-of-type { border-top: 0; padding-top: 0; }
-      #tools summary { font-weight: 600; cursor: pointer; margin-bottom: 6px; color: #26384d; }
-      #tools .field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
-      #tools select, #tools input[type="number"] { font: inherit; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; max-width: 100%; box-sizing: border-box; }
-      #tools .values { max-height: 130px; overflow: auto; display: flex; flex-direction: column; gap: 3px; margin: 4px 0 8px; }
-      #tools .values label { display: flex; gap: 6px; align-items: center; overflow-wrap: anywhere; }
-      #tools .range { display: flex; gap: 6px; align-items: center; margin: 4px 0 8px; }
-      #tools .range input { width: 70px; }
-      #tools .note { color: #526276; line-height: 1.4; overflow-wrap: anywhere; }
-      #tools button { font: inherit; padding: 6px 8px; border: 1px solid #dce3ea; background: #fff; border-radius: 6px; cursor: pointer; }
-      #tools button:disabled { opacity: .45; cursor: default; }
-      #tools .actions { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
-      #tools .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
-      #tools .chip { padding: 3px 7px; border-radius: 999px; background: #eef3f7; }
-      #tools .zoom { display: flex; gap: 6px; justify-content: flex-end; }
-      #tools .zoom button { width: 32px; font-size: 16px; line-height: 1; }
+      :is(#tools, #appearance) { width: 198px; font-size: 12px; }
+      :is(#tools, #appearance) details { border-top: 1px solid #e7ecf1; padding-top: 8px; }
+      :is(#tools, #appearance) details:first-of-type { border-top: 0; padding-top: 0; }
+      :is(#tools, #appearance) summary { font-weight: 600; cursor: pointer; margin-bottom: 6px; color: #26384d; }
+      :is(#tools, #appearance) .field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
+      :is(#tools, #appearance) select, #tools input[type="number"] { font: inherit; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; max-width: 100%; box-sizing: border-box; }
+      :is(#tools, #appearance) .values { max-height: 130px; overflow: auto; display: flex; flex-direction: column; gap: 3px; margin: 4px 0 8px; }
+      :is(#tools, #appearance) .values label { display: flex; gap: 6px; align-items: center; overflow-wrap: anywhere; }
+      :is(#tools, #appearance) .range { display: flex; gap: 6px; align-items: center; margin: 4px 0 8px; }
+      :is(#tools, #appearance) .range input { width: 70px; }
+      :is(#tools, #appearance) .note { color: #526276; line-height: 1.4; overflow-wrap: anywhere; }
+      :is(#tools, #appearance) button { font: inherit; padding: 6px 8px; border: 1px solid #dce3ea; background: #fff; border-radius: 6px; cursor: pointer; }
+      :is(#tools, #appearance) button:disabled { opacity: .45; cursor: default; }
+      :is(#tools, #appearance) .actions { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+      :is(#tools, #appearance) .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+      :is(#tools, #appearance) .chip { padding: 3px 7px; border-radius: 999px; background: #eef3f7; }
+      :is(#tools, #appearance) .zoom { display: flex; gap: 6px; justify-content: flex-end; }
+      :is(#tools, #appearance) .zoom button { width: 32px; font-size: 16px; line-height: 1; }
+      :is(#tools, #appearance) input[type="range"] { width: 100%; }
+      :is(#tools, #appearance) input[type="color"] { width: 100%; height: 26px; padding: 0; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+      :is(#tools, #appearance) .check { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: #526276; }
+      :is(#tools, #appearance) .field[hidden], :is(#tools, #appearance) .check[hidden] { display: none; }
+      #appearance .panel-title { font-weight: 700; font-size: 13px; color: #26384d; }
+      #node-color-legend .gradient, #edge-color-legend .gradient { height: 10px; border-radius: 3px; margin-top: 2px; }
+      #node-color-legend .ends, #edge-color-legend .ends { display: flex; justify-content: space-between; color: #526276; font-size: 11px; }
+      #node-color-legend .count, #edge-color-legend .count { color: #7a8797; margin-left: auto; padding-left: 8px; }
       #canvas { margin-left:300px; width:calc(100vw - 460px); }
       @media(max-width:900px) { #canvas { margin-left:0; width:100vw; height:58vh; margin-top:110px; } #explore { top:auto; bottom:70px; max-height:24vh; overflow:auto; } #right-panel { top:auto; bottom:70px; max-height:24vh; overflow:auto; } }
     </style>
@@ -240,6 +248,7 @@
     </div>
     <div id="right-panel">
       <div id="tools"></div>
+      <div id="appearance"></div>
       <div id="layers" hidden></div>
       <div id="stack-legend" hidden></div>
       <div id="node-color-legend" hidden></div>

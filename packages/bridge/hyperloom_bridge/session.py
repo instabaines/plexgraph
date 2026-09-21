@@ -27,8 +27,10 @@ class Session:
         self.layout_iterations = layout_iterations
         self.seed = seed
 
-    async def stream_to(self, send: Sender) -> None:
+    async def stream_to(self, send: Sender, after_graph: Callable[[], Awaitable[None]] | None = None) -> None:
         await send(encode_graph(self.graph))
+        if after_graph is not None:
+            await after_graph()  # e.g. bring the viewer's style up to date before the layout starts moving
         steps = force_directed_layout(
             self.graph, iterations=self.layout_iterations, seed=self.seed
         )

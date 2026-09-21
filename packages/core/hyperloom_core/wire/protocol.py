@@ -99,3 +99,40 @@ def encode_layout_step(step: LayoutStep) -> bytes:
 
 def decode(message: bytes) -> dict[str, Any]:
     return msgpack.unpackb(message, raw=False)
+
+
+_DTYPES = {np.dtype(np.float32): "f32", np.dtype(np.float64): "f64", np.dtype(np.int32): "i32", np.dtype(np.uint32): "u32", np.dtype(np.uint8): "u8"}
+
+
+def _wire_arrays(value: Any) -> Any:
+    """Copy of `value` with NumPy arrays as `{"$dtype", "$data"}` (raw bytes the viewer turns back into typed
+    arrays) and NumPy scalars as plain numbers."""
+    if isinstance(value, np.ndarray):
+        if value.dtype not in _DTYPES:
+            if value.dtype.kind in "OUS":
+                return [_wire_arrays(v) for v in value.tolist()]
+            value = value.astype(np.float64)
+        return {"$dtype": _DTYPES[value.dtype], "$data": np.ascontiguousarray(value).tobytes()}
+    if isinstance(value, dict):
+        return {k: _wire_arrays(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_wire_arrays(v) for v in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def encode_style(op: str, *, spec: dict[str, Any] | None = None, ids: Any = None, color: Any = None) -> bytes:
+    """A style message for the viewer (see StyleMessage in viz-core): `set`/`replace` carry a spec, `reset` and
+    `clear_paint` carry nothing, and `paint` carries node ids (uint32) and a color, or None to remove."""
+    if op not in ("set", "replace", "reset", "paint", "clear_paint"):
+        raise ValueError(f"unknown style operation {op!r}")
+    payload: dict[str, Any] = {"type": "style", "op": op}
+    if spec is not None:
+        payload["spec"] = _wire_arrays(spec)
+    if ids is not None:
+        payload["ids"] = np.ascontiguousarray(np.asarray(ids, dtype=np.uint32)).tobytes()
+    if op == "paint":
+        payload["color"] = None if color is None else [float(c) for c in color]
+    return msgpack.packb(payload, use_bin_type=True)
+

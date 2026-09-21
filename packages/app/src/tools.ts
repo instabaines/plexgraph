@@ -178,6 +178,17 @@ export function mountTools(root: HTMLElement, handle: ViewerHandle, keyOf: (id: 
       refreshShown();
     },
     nodeClicked(id: number): void { toggle(id); },
+    getSelection(): number[] { return [...selected]; },
+    /** The style changed somewhere else (the Appearance panel, or Python): keep the quick controls honest. */
+    syncFromStyle(): void {
+      const spec = handle.getStyle();
+      const enc = spec.node?.color as { kind?: string; attribute?: string } | string | undefined;
+      const colorAttr = typeof enc === "object" && !Array.isArray(enc) && !ArrayBuffer.isView(enc) && enc?.kind === "attribute" ? enc.attribute ?? "" : "";
+      colorBy.value = Array.from(colorBy.options).some((o) => o.value === colorAttr) ? colorAttr : "";
+      const size = spec.node?.size as { kind?: string; attribute?: string } | number | undefined;
+      const sizeKey = typeof size === "object" && size !== null ? (size.kind === "degree" ? "degree" : size.kind === "attribute" ? size.attribute ?? "" : "") : "";
+      sizeBy.value = Array.from(sizeBy.options).some((o) => o.value === sizeKey) ? sizeKey : "";
+    },
     /** A group was clicked in the grouped overview: show just that group's nodes. */
     groupClicked(attribute: string, value: string): void {
       groupBy.value = "";

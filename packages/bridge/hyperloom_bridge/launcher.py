@@ -27,6 +27,7 @@ from typing import Any, Callable
 
 from hyperloom_bridge.color import parse_color
 from hyperloom_bridge.server import BridgeServer
+from hyperloom_bridge.style import STYLE_OPTIONS, StyleController
 from hyperloom_core.model.ir import Graph
 
 logger = logging.getLogger("hyperloom_bridge.launcher")
@@ -203,10 +204,41 @@ class ShowHandle:
     thread: threading.Thread
     _stop: Callable[[], None] = field(repr=False)
     url: str | None = None
+    _style: StyleController | None = field(default=None, repr=False)
 
     def close(self) -> None:
         """Stop HTTP/WebSocket servers and release the session (idempotent)."""
         self._stop()
+
+    def style(self, **options: Any) -> None:
+        """Change how the open viewer looks, live. Takes the same networkx-style options as show() (`node_color=`,
+        `node_size=`, `edge_width=`, `edge_curvature=` ...); fields you leave out stay as they are, and
+        `RESET` restores one to its default. Invalid arguments raise here and change nothing."""
+        self._controller().update(**options)
+
+    def color_nodes(self, nodes: Any, color: Any = None) -> None:
+        """Give specific nodes (by key) a color of their own, over any color scheme.
+
+        `handle.color_nodes(["alice", "bob"], "crimson")`, or `handle.color_nodes({"alice": "red", "bob": "#00f"})`;
+        color=None removes it."""
+        self._controller().paint(nodes, color)
+
+    def clear_colors(self) -> None:
+        """Remove every color set with color_nodes()."""
+        self._controller().clear_paint()
+
+    def reset_style(self) -> None:
+        """Back to the default look: forget every style change and every painted node."""
+        self._controller().reset()
+
+    def get_style(self) -> dict[str, Any]:
+        """The style changes currently applied, as plain data."""
+        return self._controller().spec()
+
+    def _controller(self) -> StyleController:
+        if self._style is None:
+            raise RuntimeError("this session has no style controller")
+        return self._style
 
     def __enter__(self):
         return self
@@ -241,6 +273,7 @@ def show(
     arrow_t: float | None = None,
     hull_padding: float | None = None,
     return_handle: bool = False,
+    **style_options: Any,
 ) -> ShowHandle | None:
     """Render `graph` interactively.
 
@@ -305,8 +338,21 @@ def show(
     attribute name (label by that attribute's value), or a dict of
     {node_key: text} for fully custom text. Off by default.
 
-    Node shape (circles only) isn't customizable yet — that needs real new
-    rendering work, not just a wider style dict.
+    **networkx-style styling.** Beyond the options above, show() takes the
+    options in `hyperloom_bridge.style.STYLE_OPTIONS`; the same options work
+    live on the returned handle (`handle.style(...)`):
+
+        show(g, node_color=[...numbers...], cmap="viridis")       # one number per node -> colormap
+        show(g, node_color=["red", "#00f", ...])                   # one color per node
+        show(g, node_size=size_by_degree((6, 24)))                 # pixel diameters, from degree
+        show(g, node_shape="s", edgecolors="white", linewidths=1)  # squares with an outline
+        show(g, edge_color=by_weight("Blues"), edge_curvature=0.2, alpha=0.6)
+        show(g, edge_color=by_time_bucket(6))                      # color edges by time bucket
+
+    A tuple of 3-4 numbers is one color; a list or array has one entry per
+    node (or edge); a dict maps node keys (or (source, target) pairs) to
+    values. Mistakes (unknown colormap, wrong count, coloring by time on a
+    graph with no times) raise here, before anything opens.
 
     Returns None by default — like matplotlib's plt.show() or plotly's
     fig.show(), not the session handle — specifically so that calling
@@ -316,13 +362,21 @@ def show(
     right below the graph). Pass return_handle=True if you actually need
     the bound ports for programmatic use (e.g. in tests).
     """
+    # Colors, sizes, shapes and the other networkx-style options are checked now (so mistakes raise before anything
+    # opens) and sent over the WebSocket, because per-node arrays would not fit in a URL.
+    controller = StyleController(graph)
+    options = dict(style_options)
+    if node_color is not None:
+        options["node_color"] = node_color
+    if edge_color is not None:
+        options["edge_color"] = edge_color
+    controller.update(**options)
+
     style = _build_style_dict(
         {
-            "node_color": node_color,
             "node_color_by": node_color_by,
             "node_radius_px": node_radius_px,
             "node_label": node_label,
-            "edge_color": edge_color,
             "edge_color_by": edge_color_by,
             "edge_width_px": edge_width_px,
             "background_color": background_color,
@@ -356,8 +410,10 @@ def show(
                 port=ws_port,
                 layout_iterations=layout_iterations,
                 seed=seed,
+                style=controller,
             )
             port = await server.start()
+            controller.bind(server.push_style)
             stop_bridge.append(lambda: loop.call_soon_threadsafe(server.close))
             bound_ws_port.append(port)
             ready.set()
@@ -419,7 +475,7 @@ def show(
         if threading.current_thread() is not bridge_thread:
             bridge_thread.join(timeout=10)
 
-    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop, url=url)
+    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop, url=url, _style=controller)
 
     if block:
         try:

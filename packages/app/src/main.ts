@@ -1,5 +1,6 @@
-import { formatTime, mountViewer, RendererOptions, SECONDS_PER_DAY, type TimeDomain, type TimeMode, type TimeSplit } from "@hyperloom/viz-core";
+import { formatTime, mountViewer, RendererOptions, rgbaToCss, sampleColormap, SECONDS_PER_DAY, type ColorLegend, type TimeDomain, type TimeMode, type TimeSplit } from "@hyperloom/viz-core";
 import { exportView, type ExportFormat } from "./export";
+import { mountAppearance } from "./appearance";
 import { mountTools } from "./tools";
 
 function parseStyleParam(raw: string | null): RendererOptions {
@@ -16,22 +17,31 @@ function rgbaCss([r, g, b, a]: [number, number, number, number]): string {
   return `rgba(${r * 255}, ${g * 255}, ${b * 255}, ${a})`;
 }
 
-function renderColorLegend(
-  el: HTMLElement,
-  title: string,
-  entries: { value: string; color: [number, number, number, number] }[] | null
-): void {
-  if (entries === null || entries.length === 0) {
+function renderLegend(el: HTMLElement, heading: string, legend: ColorLegend | null, timeUnit: "epoch_seconds" | null): void {
+  if (legend === null || (legend.type === "categorical" && legend.entries.length === 0)) {
     el.hidden = true;
     return;
   }
   el.hidden = false;
   el.replaceChildren();
-  const heading = document.createElement("div");
-  heading.className = "title";
-  heading.textContent = title;
-  el.appendChild(heading);
-  for (const entry of entries) {
+  const title = document.createElement("div");
+  title.className = "title";
+  title.textContent = legend.title ? `${heading} · ${legend.title}` : heading;
+  el.appendChild(title);
+  if (legend.type === "continuous") {
+    const stops = Array.from({ length: 9 }, (_, i) => rgbaToCss(sampleColormap(legend.colormap, i / 8, legend.reverse)));
+    const bar = document.createElement("div");
+    bar.className = "gradient";
+    bar.style.background = `linear-gradient(to right, ${stops.join(", ")})`;
+    const ends = document.createElement("div");
+    ends.className = "ends";
+    const span = legend.max - legend.min;
+    const fmt = (v: number) => (legend.title === "time" && timeUnit ? formatTime(v, timeUnit, span) : String(Number(v.toPrecision(4))));
+    ends.append(Object.assign(document.createElement("span"), { textContent: fmt(legend.min) }), Object.assign(document.createElement("span"), { textContent: fmt(legend.max) }));
+    el.append(bar, ends);
+    return;
+  }
+  for (const entry of legend.entries) {
     const row = document.createElement("div");
     row.className = "row";
     const swatch = document.createElement("span");
@@ -40,6 +50,12 @@ function renderColorLegend(
     const text = document.createElement("span");
     text.textContent = entry.value;
     row.append(swatch, text);
+    if (entry.count !== undefined) {
+      const count = document.createElement("span");
+      count.className = "count";
+      count.textContent = entry.count.toLocaleString();
+      row.append(count);
+    }
     el.appendChild(row);
   }
 }
@@ -68,6 +84,7 @@ const edgeColorLegendEl = document.getElementById("edge-color-legend")!;
 const exportToggle = document.getElementById("export-toggle") as HTMLButtonElement;
 const exportMenu = document.getElementById("export-menu")!;
 const toolsEl = document.getElementById("tools")!;
+const appearanceEl = document.getElementById("appearance")!;
 
 function resizeCanvas(): void {
   const dpr = window.devicePixelRatio || 1;
@@ -109,9 +126,24 @@ if (!wsPort) {
   }
 
   let tools: ReturnType<typeof mountTools> | null = null;
+  let appearance: ReturnType<typeof mountAppearance> | null = null;
+  let timeUnit: "epoch_seconds" | null = null;
   const handle = mountViewer(canvas, wsUrl, {
     ...style,
-    onGraphLoaded: () => tools?.graphLoaded(),
+    onGraphLoaded: () => {
+      tools?.graphLoaded();
+      appearance?.graphLoaded();
+      timeUnit = handle.getGraphInfo().timeUnit;
+    },
+    onStyleChange: () => {
+      appearance?.styleChanged();
+      tools?.syncFromStyle();
+    },
+    onBackgroundColor: (c) => {
+      // The page around the canvas matches, so a dark theme is dark everywhere.
+      document.body.style.background = rgbaCss(c);
+    },
+    onStyleError: (err) => setStatus(`style not applied: ${err instanceof Error ? err.message : String(err)}`),
     onNodeClick: (id) => tools?.nodeClicked(id),
     onGroupClick: (attribute, value) => tools?.groupClicked(attribute, value),
     onOpen: () => {
@@ -212,10 +244,10 @@ if (!wsPort) {
         stackLegendEl.appendChild(row);
       }
     },
-    onNodeColorLegend: (entries) => renderColorLegend(nodeColorLegendEl, "Node color", entries),
-    onEdgeColorLegend: (entries) => renderColorLegend(edgeColorLegendEl, "Edge color", entries),
+    onColorLegend: (target, legend) => renderLegend(target === "node" ? nodeColorLegendEl : edgeColorLegendEl, target === "node" ? "Node color" : "Edge color", legend, timeUnit),
   });
   tools = mountTools(toolsEl, handle, (id) => handle.getNodeKey(id) ?? String(id));
+  appearance = mountAppearance(appearanceEl, handle, () => tools?.getSelection() ?? []);
   const search = document.getElementById("node-search") as HTMLInputElement;
   const results = document.getElementById("search-results")!;
   const inspector = document.getElementById("node-inspector")!;

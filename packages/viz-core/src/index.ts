@@ -3,8 +3,10 @@ export { sliceGeometry, type SliceLayout } from "./layout/slices";
 import { Renderer, RendererOptions, StackAxis, TimeFilterOptions, TimeSplit } from "./render/renderer";
 import { WebSocketTransport } from "./transport/websocket";
 import type { WireNode } from "./ir/types";
-import { isGraphMessage, isLayoutStepMessage } from "./ir/types";
+import { isGraphMessage, isLayoutStepMessage, isStyleMessage } from "./ir/types";
+import { applyStyleMessage } from "./style/messages";
 import type { AttributeSummary, NodeFilter } from "./interaction/graph-index";
+import type { StyleSpec } from "./style/spec";
 
 export { Renderer, formatTime, SECONDS_PER_DAY } from "./render/renderer";
 export type {
@@ -21,6 +23,11 @@ export type {
 } from "./render/renderer";
 export { Camera } from "./interaction/camera";
 export type { AttributeSummary, NodeFilter } from "./interaction/graph-index";
+export type { StyleSpec, NodeStyle, EdgeStyle, LabelStyle, ColorEncoding, SizeEncoding, ShapeEncoding, NodeShape } from "./style/spec";
+export { NODE_SHAPES } from "./style/spec";
+export { parseColor, rgbaToCss, rgbaToHex } from "./style/colors";
+export { colormapNames, paletteNames, sampleColormap } from "./style/colormaps";
+export type { ColorLegend } from "./style/engine";
 export * from "./ir/types";
 
 export interface ViewerHandle {
@@ -33,6 +40,12 @@ export interface ViewerHandle {
   zoomBy(factor: number): void;
   /** Node attributes with value counts / numeric ranges, for building controls. */
   getNodeAttributes(): AttributeSummary[];
+  /** The same for edge attributes. */
+  getEdgeAttributes(): AttributeSummary[];
+  /** The look when the style says nothing (what controls show and reset to). */
+  getStyleDefaults(): { nodeSize: number; edgeWidth: number; nodeColor: [number, number, number, number]; edgeColor: [number, number, number, number]; background: [number, number, number, number] };
+  /** What the graph has (weights, time), so a UI offers only encodings that make sense. */
+  getGraphInfo(): { nodes: number; edges: number; hasWeights: boolean; hasTime: boolean; timeUnit: "epoch_seconds" | null };
   /** Show only nodes passing the filter (attribute values, numeric range, degree); null clears. Returns the count shown. */
   setNodeFilter(filter: NodeFilter | null): number;
   getVisibleNodeCount(): number;
@@ -49,6 +62,16 @@ export interface ViewerHandle {
   setNodeSizeBy(by: string | null): void;
   /** Show only the fewest-hop route between two nodes; null when they are not connected. */
   focusPath(from: number, to: number): { nodes: number[]; connectors: number[]; hops: number } | null;
+  /** Change how the graph looks, live. Fields you omit stay, `null` restores a field's default; an invalid update
+   * throws and changes nothing. See StyleSpec. */
+  setStyle(update: StyleSpec): void;
+  /** The current style as plain data. */
+  getStyle(): StyleSpec;
+  /** Restore the initial style and clear painted nodes. */
+  resetStyle(): void;
+  /** Give specific nodes (by id) a color of their own, over any encoding; null removes it. */
+  paintNodes(ids: number[], color: string | ArrayLike<number> | null): void;
+  clearPaint(): void;
   /** Ring and label these nodes (a selection); [] clears. */
   setHighlightedNodes(ids: number[]): void;
   dispose(): void;
@@ -78,6 +101,8 @@ export interface MountViewerOptions extends RendererOptions {
   onOpen?: () => void;
   onClose?: () => void;
   onError?: (err: unknown) => void;
+  /** Called when a style pushed from Python is invalid; the previous style stays in place. */
+  onStyleError?: (err: unknown) => void;
 }
 
 /**
@@ -98,6 +123,14 @@ export function mountViewer(
         renderer.loadGraph(msg);
       } else if (isLayoutStepMessage(msg)) {
         renderer.applyLayoutStep(msg);
+      } else if (isStyleMessage(msg)) {
+        // A bad style must not take the viewer down: report it and keep the current look.
+        try {
+          applyStyleMessage(renderer, msg);
+        } catch (err) {
+          console.error("[hyperloom] style rejected:", err);
+          options?.onStyleError?.(err);
+        }
       }
     },
     onOpen: options?.onOpen,
@@ -112,6 +145,9 @@ export function mountViewer(
     fitView: () => renderer.fitView(),
     zoomBy: factor => renderer.zoomBy(factor),
     getNodeAttributes: () => renderer.getNodeAttributes(),
+    getEdgeAttributes: () => renderer.getEdgeAttributes(),
+    getStyleDefaults: () => renderer.getStyleDefaults(),
+    getGraphInfo: () => renderer.getGraphInfo(),
     setNodeFilter: filter => renderer.setNodeFilter(filter),
     getVisibleNodeCount: () => renderer.getVisibleNodeCount(),
     setGroupBy: attribute => renderer.setGroupBy(attribute),
@@ -122,6 +158,11 @@ export function mountViewer(
     setNodeSizeBy: by => renderer.setNodeSizeBy(by),
     focusPath: (from, to) => renderer.focusPath(from, to),
     setHighlightedNodes: ids => renderer.setHighlightedNodes(ids),
+    setStyle: update => renderer.setStyle(update),
+    getStyle: () => renderer.getStyle(),
+    resetStyle: () => renderer.resetStyle(),
+    paintNodes: (ids, color) => renderer.paintNodes(ids, color),
+    clearPaint: () => renderer.clearPaint(),
     dispose(): void {
       transport.close();
       renderer.dispose();

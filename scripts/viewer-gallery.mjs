@@ -70,6 +70,16 @@ try {
         await page.evaluate(() => window.__hyperloomHandle.fitView());
         await page.waitForTimeout(1200);
       }
+      // Restyle the viewer (colormap and size by degree, outlines, translucent edges): how long does it take, and how does it look?
+      row.styleMs = await page.evaluate(() => {
+        const start = performance.now();
+        window.__hyperloomHandle.setStyle({ node: { color: { kind: 'degree', colormap: 'plasma' }, size: { kind: 'degree', range: [4, 18], scale: 'sqrt' }, outline: { color: '#ffffff', width: 1 } }, edge: { opacity: 0.4 } });
+        return Math.round(performance.now() - start);
+      });
+      await page.waitForTimeout(900);
+      await page.screenshot({ path: `${out}/viewer-${name}-styled.png` });
+      await page.evaluate(() => window.__hyperloomHandle.resetStyle());
+      await page.waitForTimeout(400);
       const hit = await page.evaluate(() => window.__hyperloomHandle.searchNodes('1')[0]?.id ?? null);
       if (hit !== null) {
         await page.evaluate(id => window.__hyperloomHandle.focusNeighborhood(id), hit);

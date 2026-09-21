@@ -1,4 +1,4 @@
-import { GraphIndex, type AttributeSummary, type NodeFilter } from "../interaction/graph-index";
+import { GraphIndex, summarizeAttributes, type AttributeSummary, type NodeFilter } from "../interaction/graph-index";
 import { aggregateDensity, aggregateGroups } from "./density";
 import { arrowPolygon, memberHull } from "../layout/annotations";
 import { sliceGeometry, type SliceLayout } from "../layout/slices";
@@ -20,78 +20,27 @@ const OPAQUE_CANVAS_BLEND = {
   func: { srcRGB: "src alpha", dstRGB: "one minus src alpha", srcAlpha: 0, dstAlpha: 1 },
 } as const;
 import { Camera } from "../interaction/camera";
+import { mergeStyle, StyleManager, type ResolvedLabel, type ResolvedStyle, type StyleBase } from "../style/manager";
+import type { ColorLegend, StyleEnv } from "../style/engine";
+import type { NodeShape, StyleSpec } from "../style/spec";
+import { NODE_SHAPES } from "../style/spec";
+import { parseColor, rgbaToCss } from "../style/colors";
+import {
+  bucketContains, computeTimeDomain, connectorActiveAt, formatTime, SECONDS_PER_DAY, timeBucketEdges, timeSliceColor,
+  type TimeDomain, type TimeFilterOptions, type TimeMode, type TimeSplit,
+} from "./time";
+export {
+  bucketContains, computeTimeDomain, connectorActiveAt, formatTime, SECONDS_PER_DAY, timeBucketEdges, timeSliceColor,
+  type TimeDomain, type TimeFilterOptions, type TimeMode, type TimeSplit,
+} from "./time";
 import type { GraphMessage, LayoutStepMessage, WireConnector, WireLayer, WireNode } from "../ir/types";
 import { decodePositions } from "../ir/types";
 import { convexHull, inflateHull, triangulateFan } from "./hull";
-
-/** The time span covered by a graph's temporal connectors (null t_start/
- * t_end on the wire — "always present" — are excluded from the domain, so
- * a graph that's entirely non-temporal has domain = null). */
-export interface TimeDomain {
-  min: number;
-  max: number;
-  /** True when every time-bounded connector is a single instant (t_start === t_end), as in contact sequences. */
-  instantaneous: boolean;
-  /** "epoch_seconds" when times are Unix seconds and should be shown as dates. */
-  unit?: "epoch_seconds" | null;
-}
-
-export const SECONDS_PER_DAY = 86400;
-
-/** A time value for display: dates for epoch seconds (UTC; seconds shown only over short spans), else a number. */
-export function formatTime(t: number, unit: TimeDomain["unit"] = null, span = Infinity): string {
-  if (unit !== "epoch_seconds") return String(Number(t.toPrecision(6)));
-  const iso = new Date(t * 1000).toISOString();
-  if (span > 120 * SECONDS_PER_DAY) return iso.slice(0, 10);
-  return span > 2 * SECONDS_PER_DAY ? iso.slice(0, 16).replace("T", " ") : iso.slice(0, 19).replace("T", " ");
-}
-
-/** How the time slider selects connectors:
- * - "instant": active exactly at t (t_start <= t <= t_end); right for intervals, empty for most t on point events.
- * - "window": active at some moment in [t - window, t]; the trailing window that suits contact sequences.
- * - "cumulative": started at or before t (everything so far). */
-export type TimeMode = "instant" | "window" | "cumulative";
-export interface TimeFilterOptions { mode?: TimeMode; window?: number }
-
-export function connectorActiveAt(c: WireConnector, t: number, mode: TimeMode = "instant", window = 0): boolean {
-  const start = c.t_start ?? -Infinity, end = c.t_end ?? Infinity;
-  if (mode === "cumulative") return start <= t;
-  if (mode === "window") return start <= t && end >= t - window;
-  return start <= t && t <= end;
-}
-
-/** How ribbon buckets divide time: "time" gives every bucket the same duration; "events" gives every bucket
- * about the same number of events (busy periods get narrow buckets, quiet ones wide). */
-export type TimeSplit = "time" | "events";
-
-/** Ribbon bucket boundaries: `n + 1` increasing times from `domain.min` to `domain.max`. Equal-events
- * boundaries follow quantiles of the connectors' start times; repeated values collapse, so a stream with many
- * simultaneous events can yield fewer than `n` buckets. */
-export function timeBucketEdges(connectors: WireConnector[], domain: { min: number; max: number }, n: number, split: TimeSplit = "time"): number[] {
-  n = Math.max(1, Math.floor(n));
-  const width = (domain.max - domain.min) / n || 1;
-  if (split === "time") return Array.from({ length: n + 1 }, (_, i) => (i === n ? domain.max : domain.min + i * width));
-  const starts = connectors.map(c => c.t_start).filter((t): t is number => t !== null && Number.isFinite(t)).sort((a, b) => a - b);
-  const edges = [domain.min];
-  for (let i = 1; i < n; i++) {
-    const t = starts[Math.floor((i * starts.length) / n)];
-    if (t !== undefined && t > edges[edges.length - 1] && t < domain.max) edges.push(t);
-  }
-  edges.push(domain.max);
-  return edges.length >= 2 && edges[edges.length - 1] > edges[0] ? edges : [domain.min, domain.min + width * n];
-}
 
 /** Lines for a panel heading. A date range ("a → b") is stacked so neighbouring panel headings cannot overlap. */
 export function panelHeadingLines(index: number, label: string): string[] {
   const [from, to] = label.split(" → ");
   return to === undefined ? [`${index + 1} · ${label}`] : [`${index + 1} · ${from}`, `→ ${to}`];
-}
-
-/** Whether a connector belongs in ribbon bucket [start, end). Buckets are half-open so an event exactly on a
- * boundary lands in one bucket only; the last bucket also owns its end point. */
-export function bucketContains(c: WireConnector, start: number, end: number, isLast: boolean): boolean {
-  const cStart = c.t_start ?? -Infinity, cEnd = c.t_end ?? Infinity;
-  return (isLast ? cStart <= end : cStart < end) && cEnd >= start;
 }
 
 /** A layer plus the color assigned to it for rendering, handed to the app
@@ -166,23 +115,6 @@ export interface StackSliceInfo {
   /** Connectors in this slice. */
   count: number;
   color: [number, number, number, number];
-}
-
-/** Sequential (not categorical) color ramp for time-axis stacking — an
- * ordered gradient (cool -> warm) reads as "progression through time" the
- * way a qualitative palette (LAYER_PALETTE) doesn't; layer-axis stacking
- * keeps using LAYER_PALETTE instead, since layers are categorical, not
- * ordered. */
-export function timeSliceColor(index: number, total: number): [number, number, number, number] {
-  const t = total <= 1 ? 0 : index / (total - 1);
-  const early: [number, number, number] = [0.16, 0.45, 0.85]; // cool blue
-  const late: [number, number, number] = [0.9, 0.45, 0.15]; // warm orange
-  return [
-    early[0] + (late[0] - early[0]) * t,
-    early[1] + (late[1] - early[1]) * t,
-    early[2] + (late[2] - early[2]) * t,
-    0.85,
-  ];
 }
 
 /** A label to draw next to every node (see nodeLabel): show each node's
@@ -261,6 +193,14 @@ export interface RendererOptions {
   onHover?: (nodeId: number | null) => void;
   /** Called after a graph snapshot has been loaded and indexed (node attributes are then available). */
   onGraphLoaded?: () => void;
+  /** Initial style (see StyleSpec); the individual options above still work and this is merged over them. */
+  style?: StyleSpec;
+  /** Called after every style change (including ones pushed from Python), so a UI can refresh its controls. */
+  onStyleChange?: () => void;
+  /** Called when the background color changes (including at load), so a page can match it. */
+  onBackgroundColor?: (color: [number, number, number, number]) => void;
+  /** Called whenever the node or edge color scale changes: a categorical legend, a continuous colormap range, or null. */
+  onColorLegend?: (target: "node" | "edge", legend: ColorLegend | null) => void;
   /** Called when a group is clicked in the grouped overview (see setGroupBy). */
   onGroupClick?: (attribute: string, value: string) => void;
   /** Called when a node is clicked (pointer released without dragging). */
@@ -290,6 +230,10 @@ type VisualDefaults = Required<
     RendererOptions,
     | "onHover"
     | "onNodeClick"
+    | "style"
+    | "onColorLegend"
+    | "onBackgroundColor"
+    | "onStyleChange"
     | "onGroupClick"
     | "onGraphLoaded"
     | "onTimeDomain"
@@ -352,24 +296,45 @@ function decodePickedId(pixel: Uint8Array): number | null {
   return raw === 0 ? null : raw - 1;
 }
 
-/** The [min, max] span across all connectors' finite t_start/t_end. A null
- * bound means "always present" and is excluded from the domain — a graph
- * with no temporal connectors (or only always-present ones) has no domain,
- * so the caller knows to skip showing a timeline UI at all. */
-export function computeTimeDomain(connectors: WireConnector[]): TimeDomain | null {
-  let min = Infinity;
-  let max = -Infinity;
-  let bounded = 0, instants = 0;
-  for (const c of connectors) {
-    if (c.t_start !== null) min = Math.min(min, c.t_start);
-    if (c.t_end !== null) max = Math.max(max, c.t_end);
-    if (c.t_start !== null && c.t_end !== null) { bounded++; if (c.t_start === c.t_end) instants++; }
+/** The legacy per-option colouring (nodeColorBy, edgeColorBy) expressed as a style. */
+function initialStyle(options: RendererOptions): StyleSpec {
+  const spec: StyleSpec = {};
+  if (options.nodeColorBy) spec.node = { color: { kind: "attribute", attribute: options.nodeColorBy } };
+  if (options.edgeColorBy) spec.edge = { color: { kind: "attribute", attribute: options.edgeColorBy } };
+  return spec;
+}
+
+/** One node mark as SVG, matching the shapes the node shader draws (see NODE_SHAPES). */
+function svgNodeShape(shape: number, x: number, y: number, r: number, fill: string, extra: string): string {
+  const f = (v: number) => v.toFixed(1);
+  const poly = (pts: [number, number][]) => `<polygon points="${pts.map(([px, py]) => `${f(x + px * r)},${f(y + py * r)}`).join(" ")}" fill="${fill}"${extra} />`;
+  switch (NODE_SHAPES[shape] ?? "circle") {
+    case "square": return `<rect x="${f(x - 0.86 * r)}" y="${f(y - 0.86 * r)}" width="${f(1.72 * r)}" height="${f(1.72 * r)}" fill="${fill}"${extra} />`;
+    case "triangle": return poly([[0, -1], [-0.95, 0.75], [0.95, 0.75]]);
+    case "diamond": return poly([[0, -1], [1, 0], [0, 1], [-1, 0]]);
+    case "cross": {
+      const w = 0.34;
+      return poly([[-w, -1], [w, -1], [w, -w], [1, -w], [1, w], [w, w], [w, 1], [-w, 1], [-w, w], [-1, w], [-1, -w], [-w, -w]]);
+    }
+    default: return `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${fill}"${extra} />`;
   }
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
-  return { min, max, instantaneous: bounded > 0 && instants === bounded };
+}
+
+/** Whether a style update can change what the edge vertex buffers hold (opacity and arrow size are uniforms). */
+function changesEdgeBuffers(update: StyleSpec): boolean {
+  const edge = update.edge;
+  if (edge === undefined) return false;
+  if (edge === null) return true;
+  return "color" in edge || "width" in edge || "curvature" in edge;
 }
 
 const DETAIL_LIMIT = 5000;
+const CURVE_SEGMENTS = 12;
+const MAX_ALL_LABELS = 2500; // labelling every node beyond this many is unreadable and slow, so only hover labels remain
+const CURVED_EDGE_LIMIT = 30_000; // above this many drawn edges, curvature is ignored to keep frames cheap
+
+/** A run of thin (one-pixel) edges sharing one color, drawn with one call. */
+interface ThinEdgeGroup { color: [number, number, number, number]; offset: number; count: number }
 const DENSITY_RESOLUTION = 48;
 const SLICE_DENSITY_RESOLUTION = 32; // small atlas/ribbon panels: coarser cells and fewer links keep frames cheap
 
@@ -384,9 +349,7 @@ export class Renderer {
   private onNodeColorLegend: ((entries: ColorLegendEntry[] | null) => void) | null;
   private onEdgeColorLegend: ((entries: ColorLegendEntry[] | null) => void) | null;
   private nodeColorOverrides: Record<string, [number, number, number, number]>;
-  private nodeColorByAttr: string | null;
   private edgeColorOverrides: Record<string, [number, number, number, number]>;
-  private edgeColorByAttr: string | null;
   private nodeLabelSpec: NodeLabelSpec;
 
   private index = new GraphIndex([], []);
@@ -394,10 +357,32 @@ export class Renderer {
   private nodeFilterNodes: Set<number> | null = null;
   private highlighted: number[] = [];
   private nodeSizeBuffer: ReturnType<Regl["buffer"]> | null = null;
+  private nodeShapeBuffer: ReturnType<Regl["buffer"]> | null = null;
+  private stackedNodeColorBuffer: ReturnType<Regl["buffer"]> | null = null;
+  private stackedNodeSizeBuffer: ReturnType<Regl["buffer"]> | null = null;
+  private nodeSizes: Float32Array = new Float32Array(0); // diameter in pixels, per node
+  private nodeOpacity = 1;
+  private nodeOutline: { color: [number, number, number, number]; width: number } = { color: [1, 1, 1, 1], width: 0 };
   private nodeSizeBy: string | null = null;
+  private styleManager: StyleManager;
+  private optionStyle: StyleSpec;
+  private resolved: ResolvedStyle | null = null;
+  private backgroundColor: [number, number, number, number];
+  private labelStyle: ResolvedLabel = { mode: "hover", fontSize: 11, color: [0.12, 0.12, 0.12, 0.9], halo: false, attribute: null };
+  private nodeActivityCache: { first: Float64Array; last: Float64Array } | null = null;
+  private graphVersion = 0;
+  private edgeStyleColors: Float32Array = new Float32Array(0);   // per connector in allConnectors order
+  private edgeStyleWidths: Float32Array = new Float32Array(0);
+  private edgeIndexById = new Map<number, number>();
+  private edgeOpacity = 1;
+  private curvature = 0;
+  private arrowScale = 1;
   private onNodeClick: ((nodeId: number, event: { shiftKey: boolean }) => void) | null;
   private onGraphLoaded: (() => void) | null;
   private onGroupClick: ((attribute: string, value: string) => void) | null;
+  private onColorLegend: ((target: "node" | "edge", legend: ColorLegend | null) => void) | null;
+  private onBackgroundColor: ((color: [number, number, number, number]) => void) | null;
+  private onStyleChange: (() => void) | null;
   private focusedConnectors: Set<number> | null = null;
   private selectedNode: number | null = null;
   private visibleNodeIds: number[] = [];
@@ -408,7 +393,7 @@ export class Renderer {
   private lastCamera = "";
   private densityDirty = true;
   private densityNodes = new Float32Array(0);
-  private nodeColorValues = new Float32Array(0);
+  private nodeColorValues: Float32Array = new Float32Array(0);
   private densityEdges = new Float32Array(0);
   private densityRanges: {nodes: StackDrawRange; edges: StackDrawRange}[] = [];
   private densityNodeBuffer: ReturnType<Regl["buffer"]> | null = null;
@@ -471,10 +456,13 @@ export class Renderer {
     return this.stackAxis === null && this.groupBy === null && (this.baseNodes()?.size ?? this.numNodes) > DETAIL_LIMIT;
   }
 
-  private markLodStale(): void {
+  /** The level of detail may be out of date. A camera move restarts the wait for quiet (so we do not re-evaluate mid
+   * drag); streaming layout steps only start it, or a stream that never pauses would keep the view stuck in the
+   * overview however far you zoom. */
+  private markLodStale(restartWait = true): void {
     if (!this.needsLod()) return;
+    if (!this.lodPending || restartWait) this.lodChangedAt = performance.now();
     this.lodPending = true;
-    this.lodChangedAt = performance.now();
   }
 
   /** Re-evaluate the level of detail once the camera (or layout) has stopped changing. */
@@ -551,7 +539,11 @@ export class Renderer {
   // shared node-position index buffer can express. The index buffer
   // (2 triangles per edge) and colors only change when the edge set
   // changes; positions are rebuilt every layout step.
-  private edges: { source: number; target: number; color: [number, number, number, number] }[] = [];
+  private edges: { source: number; target: number; color: [number, number, number, number]; width: number }[] = [];
+  private edgeSegments = 1; // quad-strip segments per edge: 1 when straight, CURVE_SEGMENTS when curved
+  private edgesAreCurved = false;
+  private thinEdgeGroups: ThinEdgeGroup[] = [];
+  private thinEdgeColors: Float32Array = new Float32Array(0); // per thin edge, parallel to thinEdgePairs
   // Above this many connectors, edges fall back to edgeDrawThin (cheap
   // indexed GL_LINES reusing positionBuffer directly — no per-edge CPU
   // rebuild on every layout step) instead of edgeDraw's per-edge-colored,
@@ -630,6 +622,7 @@ export class Renderer {
   private edgeSrcDstBuffer: ReturnType<Regl["buffer"]> | null = null; // dynamic, rebuilt on layout step
   private edgeAlongSideBuffer: ReturnType<Regl["buffer"]> | null = null; // static
   private edgeColorBuffer: ReturnType<Regl["buffer"]> | null = null; // static, rebuilt on setEdgeSet
+  private edgeWidthBuffer: ReturnType<Regl["buffer"]> | null = null; // static, per vertex, rebuilt on setEdgeSet
   private edgeIndexBuffer: ReturnType<Regl["elements"]> | null = null; // static, rebuilt on setEdgeSet
   private edgeThinIndexBuffer: ReturnType<Regl["elements"]> | null = null; // static, thin-edge fallback
   private stackedNodePositionBuffer: ReturnType<Regl["buffer"]> | null = null; // dynamic
@@ -668,15 +661,19 @@ export class Renderer {
     this.onNodeClick = options.onNodeClick ?? null;
     this.onGraphLoaded = options.onGraphLoaded ?? null;
     this.onGroupClick = options.onGroupClick ?? null;
+    this.onColorLegend = options.onColorLegend ?? null;
+    this.onBackgroundColor = options.onBackgroundColor ?? null;
+    this.onStyleChange = options.onStyleChange ?? null;
+    this.optionStyle = mergeStyle(initialStyle(options), options.style ?? {});
+    this.styleManager = new StyleManager(this.optionStyle);
+    this.backgroundColor = [...this.opts.backgroundColor];
     this.onTimeDomain = options.onTimeDomain ?? null;
     this.onLayers = options.onLayers ?? null;
     this.onStackChange = options.onStackChange ?? null;
     this.onNodeColorLegend = options.onNodeColorLegend ?? null;
     this.onEdgeColorLegend = options.onEdgeColorLegend ?? null;
     this.nodeColorOverrides = options.nodeColorOverrides ?? {};
-    this.nodeColorByAttr = options.nodeColorBy ?? null;
     this.edgeColorOverrides = options.edgeColorOverrides ?? {};
-    this.edgeColorByAttr = options.edgeColorBy ?? null;
     this.nodeLabelSpec = options.nodeLabel ?? false;
     this.regl = createREGL({
       canvas,
@@ -766,12 +763,16 @@ export class Renderer {
     this.positionBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
     this.nodeColorBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
     this.nodeSizeBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
+    this.nodeShapeBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
+    this.stackedNodeColorBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
+    this.stackedNodeSizeBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
     this.idBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
     this.arrowCornerBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
     this.arrowSrcDstBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
     this.edgeSrcDstBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
     this.edgeAlongSideBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
     this.edgeColorBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
+    this.edgeWidthBuffer = regl.buffer({ data: new Float32Array(0), usage: "static" });
     this.edgeIndexBuffer = regl.elements({ data: new Uint32Array(0), usage: "static" });
     this.edgeThinIndexBuffer = regl.elements({ data: new Uint32Array(0), primitive: "lines", usage: "static" });
     this.hyperedgeTriangleBuffer = regl.buffer({ data: new Float32Array(0), usage: "dynamic" });
@@ -797,34 +798,60 @@ export class Renderer {
         precision mediump float;
         attribute vec2 position;
         attribute vec4 color;
-        attribute float sizeMul;
+        attribute float size;   // diameter in pixels, per node
+        attribute float shape;  // index into NODE_SHAPES
         uniform mat3 view;
-        uniform float pointSize;
         varying vec4 vColor;
+        varying float vShape;
+        varying float vSize;
         void main() {
           vec3 p = view * vec3(position, 1.0);
           gl_Position = vec4(p.xy, 0, 1);
-          gl_PointSize = pointSize * sizeMul;
+          gl_PointSize = size;
           vColor = color;
+          vShape = shape;
+          vSize = size;
         }
       `,
       frag: `
         precision mediump float;
         varying vec4 vColor;
+        varying float vShape;
+        varying float vSize;
+        uniform float opacity;
+        uniform vec4 outlineColor;
+        uniform float outlinePx;
+        // Distance from the centre in units where 1.0 is the shape's edge (so inside is <= 1.0).
+        float shapeDistance(vec2 c, float s) {
+          vec2 p = vec2(c.x, -c.y) * 2.0;  // gl_PointCoord's y points down
+          if (s < 0.5) return length(p);                                   // circle
+          if (s < 1.5) return max(abs(p.x), abs(p.y)) / 0.86;              // square
+          if (s < 2.5) {                                                   // triangle, apex up
+            if (p.y > 1.0) return 2.0;
+            return max(-p.y / 0.75, abs(p.x) / ((1.0 - p.y) * 0.5429));
+          }
+          if (s < 3.5) return abs(p.x) + abs(p.y);                         // diamond
+          return min(max(abs(p.x) / 0.34, abs(p.y)), max(abs(p.y) / 0.34, abs(p.x)));  // cross
+        }
         void main() {
-          vec2 c = gl_PointCoord - vec2(0.5);
-          if (dot(c, c) > 0.25) discard;
-          gl_FragColor = vColor;
+          float d = shapeDistance(gl_PointCoord - vec2(0.5), vShape);
+          if (d > 1.0) discard;
+          vec4 col = vColor;
+          if (outlinePx > 0.0 && d > 1.0 - outlinePx / (vSize * 0.5)) col = outlineColor;
+          gl_FragColor = vec4(col.rgb, col.a * opacity);
         }
       `,
       attributes: {
         position: () => this.positionBuffer!,
         color: () => this.nodeColorBuffer!,
-        sizeMul: () => this.nodeSizeBuffer!,
+        size: () => this.nodeSizeBuffer!,
+        shape: () => this.nodeShapeBuffer!,
       },
       uniforms: {
         view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
-        pointSize: this.opts.nodeRadiusPx * 2,
+        opacity: () => this.nodeOpacity,
+        outlineColor: () => this.nodeOutline.color,
+        outlinePx: () => this.nodeOutline.width,
       },
       elements: () => this.nodeElements!,
       count: () => this.visibleNodeIds.length,
@@ -850,46 +877,56 @@ export class Renderer {
       vert: `
         precision mediump float;
         attribute vec4 srcDst;
-        // x: 0 = this vertex sits at src, 1 = at dst.
-        // y: -1 or +1, which side of the line this vertex is offset to.
+        // x: position along the edge, 0 at src to 1 at dst. y: -1 or +1, which side of the line the vertex is on.
         attribute vec2 alongSide;
         attribute vec4 color;
+        attribute float width;
         uniform mat3 view;
         uniform vec2 viewportSize;
-        uniform float edgeWidthPx;
+        uniform float curvature;
         varying vec4 vColor;
         void main() {
-          vec3 clipSrc = view * vec3(srcDst.xy, 1.0);
-          vec3 clipDst = view * vec3(srcDst.zw, 1.0);
-          vec2 clipDir = clipDst.xy - clipSrc.xy;
-          vec2 pixelDir = clipDir * viewportSize;
-          float len = length(pixelDir);
-          pixelDir = len > 0.0001 ? pixelDir / len : vec2(1.0, 0.0);
+          vec2 a = srcDst.xy;
+          vec2 b = srcDst.zw;
+          vec2 d = b - a;
+          float len = length(d);
+          vec2 perp = len > 1e-9 ? vec2(-d.y, d.x) / len : vec2(0.0);
+          // Quadratic Bezier bent to one side by curvature * length; curvature 0 is the straight segment.
+          vec2 c = 0.5 * (a + b) + perp * curvature * len;
+          float t = alongSide.x;
+          float u = 1.0 - t;
+          vec2 point = u * u * a + 2.0 * u * t * c + t * t * b;
+          vec2 tangent = 2.0 * u * (c - a) + 2.0 * t * (b - c);
+          vec3 clip = view * vec3(point, 1.0);
+          vec2 pixelDir = (view * vec3(tangent, 0.0)).xy * viewportSize;
+          float pixelLen = length(pixelDir);
+          pixelDir = pixelLen > 0.0001 ? pixelDir / pixelLen : vec2(1.0, 0.0);
           vec2 pixelPerp = vec2(-pixelDir.y, pixelDir.x);
           vec2 ndcPerpUnit = pixelPerp * (2.0 / viewportSize);
-          vec2 base = mix(clipSrc.xy, clipDst.xy, alongSide.x);
-          vec2 offset = ndcPerpUnit * alongSide.y * (edgeWidthPx * 0.5);
-          gl_Position = vec4(base + offset, 0, 1);
+          gl_Position = vec4(clip.xy + ndcPerpUnit * alongSide.y * (width * 0.5), 0, 1);
           vColor = color;
         }
       `,
       frag: `
         precision mediump float;
         varying vec4 vColor;
+        uniform float opacity;
         void main() {
-          gl_FragColor = vColor;
+          gl_FragColor = vec4(vColor.rgb, vColor.a * opacity);
         }
       `,
       attributes: {
         srcDst: () => this.edgeSrcDstBuffer!,
         alongSide: () => this.edgeAlongSideBuffer!,
         color: () => this.edgeColorBuffer!,
+        width: () => this.edgeWidthBuffer!,
       },
       elements: () => this.edgeIndexBuffer!,
       uniforms: {
         view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
         viewportSize: (_ctx: any) => [this.canvas.clientWidth, this.canvas.clientHeight],
-        edgeWidthPx: this.opts.edgeWidthPx,
+        curvature: () => (this.edgesAreCurved ? this.curvature : 0),
+        opacity: () => this.edgeOpacity,
       },
       blend: OPAQUE_CANVAS_BLEND,
       depth: { enable: false },
@@ -919,8 +956,9 @@ export class Renderer {
       frag: `
         precision mediump float;
         uniform vec4 color;
+        uniform float opacity;
         void main() {
-          gl_FragColor = color;
+          gl_FragColor = vec4(color.rgb, color.a * opacity);
         }
       `,
       attributes: {
@@ -929,8 +967,11 @@ export class Renderer {
       elements: () => this.edgeThinIndexBuffer!,
       uniforms: {
         view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
-        color: this.opts.edgeColor,
+        color: regl.prop<ThinEdgeGroup, "color">("color"),
+        opacity: () => this.edgeOpacity,
       },
+      offset: regl.prop<ThinEdgeGroup, "offset">("offset"),
+      count: regl.prop<ThinEdgeGroup, "count">("count"),
       blend: OPAQUE_CANVAS_BLEND,
       depth: { enable: false },
       primitive: "lines",
@@ -1057,30 +1098,35 @@ export class Renderer {
       vert: `
         precision mediump float;
         attribute vec2 position;
+        attribute vec4 color;
+        attribute float size;
         uniform mat3 view;
-        uniform float pointSize;
+        varying vec4 vColor;
         void main() {
           vec3 p = view * vec3(position, 1.0);
           gl_Position = vec4(p.xy, 0, 1);
-          gl_PointSize = pointSize;
+          gl_PointSize = size;
+          vColor = color;
         }
       `,
       frag: `
         precision mediump float;
-        uniform vec4 color;
+        varying vec4 vColor;
+        uniform float opacity;
         void main() {
           vec2 c = gl_PointCoord - vec2(0.5);
           if (dot(c, c) > 0.25) discard;
-          gl_FragColor = color;
+          gl_FragColor = vec4(vColor.rgb, vColor.a * opacity);
         }
       `,
       attributes: {
         position: () => this.stackedNodePositionBuffer!,
+        color: () => this.stackedNodeColorBuffer!,
+        size: () => this.stackedNodeSizeBuffer!,
       },
       uniforms: {
         view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
-        pointSize: this.opts.nodeRadiusPx * 1.6,
-        color: [this.opts.nodeColor[0], this.opts.nodeColor[1], this.opts.nodeColor[2], 0.9],
+        opacity: () => this.nodeOpacity,
       },
       elements: () => this.sliceNodeElements!,
       offset: regl.prop<StackDrawRange, "offset">("offset"),
@@ -1196,8 +1242,9 @@ export class Renderer {
       frag: `
         precision mediump float;
         uniform vec4 color;
+        uniform float opacity;
         void main() {
-          gl_FragColor = color;
+          gl_FragColor = vec4(color.rgb, color.a * opacity);
         }
       `,
       attributes: {
@@ -1206,8 +1253,9 @@ export class Renderer {
       },
       uniforms: {
         view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
-        arrowLength: this.opts.arrowLength,
-        arrowWidth: this.opts.arrowWidth,
+        arrowLength: () => this.opts.arrowLength * this.arrowScale,
+        arrowWidth: () => this.opts.arrowWidth * this.arrowScale,
+        opacity: () => this.edgeOpacity,
         arrowT: this.opts.arrowT,
         color: this.opts.arrowColor,
       },
@@ -1222,13 +1270,15 @@ export class Renderer {
         precision mediump float;
         attribute vec2 position;
         attribute float id;
+        attribute float size;
         uniform mat3 view;
-        uniform float pointSize;
         varying float vId;
         void main() {
           vec3 p = view * vec3(position, 1.0);
           gl_Position = vec4(p.xy, 0, 1);
-          gl_PointSize = pointSize;
+          // The mark itself (so a node hovers exactly where it is drawn, and the one on top wins), with a small
+          // minimum so tiny nodes stay easy to hit.
+          gl_PointSize = max(size, 14.0);
           vId = id;
         }
       `,
@@ -1245,16 +1295,17 @@ export class Renderer {
       attributes: {
         position: () => this.positionBuffer!,
         id: () => this.idBuffer!,
+        size: () => this.nodeSizeBuffer!,
       },
       uniforms: {
         view: (_ctx: any) => this.camera.matrix(this.canvas.clientWidth / this.canvas.clientHeight),
-        // A larger hit target than the visible dot makes hovering easier
-        // without changing what's drawn to the visible canvas.
-        pointSize: this.opts.nodeRadiusPx * 3,
       },
       elements: () => this.nodeElements!,
       count: () => this.visibleNodeIds.length,
       primitive: "points",
+      // Later nodes draw on top of earlier ones on screen, so picking must let the last one drawn win too. With
+      // regl's default depth test all nodes sit at the same depth and the FIRST drawn would win where they overlap.
+      depth: { enable: false },
       framebuffer: () => this.pickFbo!,
     });
 
@@ -1284,7 +1335,7 @@ export class Renderer {
     this.drawNodes = () => nodeDraw();
     this.drawEdges = () => {
       if (this.useThinEdges) {
-        if (this.thinEdgeCount > 0) edgeDrawThin();
+        for (const group of this.thinEdgeGroups) edgeDrawThin(group);
       } else if (this.edges.length > 0) {
         edgeDraw();
       }
@@ -1396,6 +1447,31 @@ export class Renderer {
   /** Attribute names with their value counts or numeric ranges, for building filter/colour/size controls. */
   getNodeAttributes(): AttributeSummary[] { return this.index.attributeSummary(); }
 
+  /** What the graph looks like when the style says nothing: the values a control should show and reset to. */
+  getStyleDefaults(): { nodeSize: number; edgeWidth: number; nodeColor: [number, number, number, number]; edgeColor: [number, number, number, number]; background: [number, number, number, number] } {
+    return {
+      nodeSize: this.opts.nodeRadiusPx * 2,
+      edgeWidth: this.opts.edgeWidthPx,
+      nodeColor: [...this.opts.nodeColor],
+      edgeColor: [...this.opts.edgeColor],
+      background: [...this.opts.backgroundColor],
+    };
+  }
+
+  /** The same for edge (connector) attributes. */
+  getEdgeAttributes(): AttributeSummary[] { return summarizeAttributes(this.allConnectors); }
+
+  /** What kinds of data the graph has, so a UI can offer only the encodings that make sense. */
+  getGraphInfo(): { nodes: number; edges: number; hasWeights: boolean; hasTime: boolean; timeUnit: "epoch_seconds" | null } {
+    return {
+      nodes: this.numNodes,
+      edges: this.allConnectors.length,
+      hasWeights: this.allConnectors.some((c) => c.weight !== null && Number.isFinite(c.weight)),
+      hasTime: this.timeDomain !== null,
+      timeUnit: this.timeDomain?.unit ?? null,
+    };
+  }
+
   /** Show only nodes passing the filter (attribute values, numeric range, degree); connectors need every
    * endpoint visible. Node positions do not change. Pass null to clear. Composes with neighbourhood focus and
    * with the layer/time filters. Returns how many nodes pass. */
@@ -1408,26 +1484,172 @@ export class Renderer {
   /** Number of nodes currently eligible to be drawn (after focus and node filter). */
   getVisibleNodeCount(): number { return this.baseNodes()?.size ?? this.numNodes; }
 
-  /** Colour nodes by an attribute (one colour per distinct value), or null for the plain node colour. */
+  /** Colour nodes by an attribute (one colour per distinct value, or a colormap for a numeric attribute), or null for the plain colour. */
   setNodeColorBy(attribute: string | null): void {
-    this.nodeColorByAttr = attribute;
-    this.resolveNodeColors(this.index.nodes);
-    this.dirty = this.densityDirty = true;
+    this.setStyle({ node: { color: attribute === null ? null : { kind: "attribute", attribute } } });
   }
 
   /** Scale node size by "degree", by a numeric attribute, or null for uniform size. Sizes span 0.7x-3x. */
   setNodeSizeBy(by: string | null): void {
-    const nodes = this.index.nodes;
-    const raw = new Float64Array(nodes.length).fill(NaN);
-    if (by === "degree") nodes.forEach((n, i) => (raw[i] = this.index.degree(n.id)));
-    else if (by !== null) nodes.forEach((n, i) => { const v = n.attrs[by]; if (typeof v === "number" && Number.isFinite(v)) raw[i] = v; });
-    let lo = Infinity, hi = -Infinity;
-    for (const v of raw) if (!Number.isNaN(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
-    const sizes = new Float32Array(nodes.length).fill(1);
-    if (by !== null && hi > lo) raw.forEach((v, i) => { if (!Number.isNaN(v)) sizes[i] = 0.7 + 2.3 * Math.sqrt((v - lo) / (hi - lo)); });
-    this.nodeSizeBy = by !== null && hi > lo ? by : null;
-    this.nodeSizeBuffer?.({ data: sizes, usage: "static" } as any);
-    this.dirty = true;
+    const d = this.opts.nodeRadiusPx * 2;
+    const range: [number, number] = [0.7 * d, 3 * d];
+    this.setStyle({ node: { size: by === null ? null : by === "degree" ? { kind: "degree", range, scale: "sqrt" } : { kind: "attribute", attribute: by, range, scale: "sqrt" } } });
+    this.nodeSizeBy = by;
+  }
+
+  /** Change how the graph looks, live. Fields you omit stay as they are, `null` restores a field's default, and an
+   * invalid update throws and changes nothing. See StyleSpec. */
+  setStyle(update: StyleSpec): void {
+    this.resolveStyle(update);
+  }
+
+  /** The current style (colour encodings, sizes, and so on) as plain data. */
+  getStyle(): StyleSpec {
+    return this.styleManager.get();
+  }
+
+  /** Back to the options' style, and clear all painted nodes. */
+  resetStyle(): void {
+    this.styleManager = new StyleManager(this.optionStyle);
+    this.nodeSizeBy = null;
+    this.resolveStyle();
+  }
+
+  /** Give specific nodes (by id) a color of their own, over any encoding; a null color removes it. */
+  paintNodes(ids: number[], color: string | ArrayLike<number> | null): void {
+    this.styleManager.paint(ids, color === null ? null : parseColor(color));
+    this.resolveStyle(undefined, false); // painting only touches nodes
+  }
+
+  clearPaint(): void {
+    this.styleManager.clearPaint();
+    this.resolveStyle(undefined, false);
+  }
+
+  private styleEnv(): StyleEnv {
+    const nodeCount = this.index.nodes.length;
+    return {
+      nodes: this.index.nodes,
+      connectors: this.allConnectors,
+      timeConnectors: [...this.allConnectors, ...this.allHyperedges],
+      degree: (i) => this.index.degree(i),
+      nodeActivity: () => {
+        if (this.nodeActivityCache) return this.nodeActivityCache;
+        const first = new Float64Array(nodeCount).fill(NaN), last = new Float64Array(nodeCount).fill(NaN);
+        for (const c of [...this.allConnectors, ...this.allHyperedges]) {
+          for (const n of c.endpoints) {
+            if (c.t_start !== null) first[n] = Number.isNaN(first[n]) ? c.t_start : Math.min(first[n], c.t_start);
+            if (c.t_end !== null) last[n] = Number.isNaN(last[n]) ? c.t_end : Math.max(last[n], c.t_end);
+          }
+        }
+        return (this.nodeActivityCache = { first, last });
+      },
+      timeDomain: this.timeDomain,
+      cacheKey: this.graphVersion,
+    };
+  }
+
+  private styleBase(): StyleBase {
+    return {
+      nodeColor: this.opts.nodeColor,
+      nodeRadiusPx: this.opts.nodeRadiusPx,
+      edgeColor: this.opts.edgeColor,
+      edgeWidthPx: this.opts.edgeWidthPx,
+      backgroundColor: this.opts.backgroundColor,
+      edgeBaseColor: (i) => layerColor(this.allConnectors[i].layer_id, this.opts.edgeColor),
+      nodeOverride: Object.keys(this.nodeColorOverrides).length ? (i) => this.nodeColorOverrides[this.nodeKeys[i]] : undefined,
+      edgeOverride: Object.keys(this.edgeColorOverrides).length
+        ? (i) => {
+            const c = this.allConnectors[i];
+            return this.edgeColorOverrides[`${this.nodeKeys[c.endpoints[0]]}||${this.nodeKeys[c.endpoints[1]]}`];
+          }
+        : undefined,
+    };
+  }
+
+  /** Resolve the style (merging `update` first, if given) and push the result to the GPU. */
+  private resolveStyle(update?: StyleSpec, rebuildEdges = update === undefined || changesEdgeBuffers(update)): void {
+    // Edge buffers only need rebuilding when edge colors, widths or curvature can have changed; node changes and
+    // edge opacity or arrow size (shader uniforms) leave them alone.
+    const env = this.styleEnv(), base = this.styleBase();
+    const resolved = update ? this.styleManager.apply(update, env, base) : this.styleManager.resolve(env, base);
+    this.applyResolved(resolved, rebuildEdges);
+  }
+
+  private applyResolved(r: ResolvedStyle, rebuildEdges: boolean): void {
+    this.resolved = r;
+    this.nodeColorValues = r.nodeColors;
+    this.nodeSizes = r.nodeSizes;
+    this.nodeOpacity = r.nodeOpacity;
+    this.nodeOutline = { color: [...r.outline.color] as [number, number, number, number], width: r.outline.width };
+    this.labelStyle = r.label;
+    this.backgroundColor = [...r.background] as [number, number, number, number];
+    this.onBackgroundColor?.(this.backgroundColor);
+    this.nodeColorBuffer?.({ data: r.nodeColors, usage: "static" } as any);
+    this.nodeSizeBuffer?.({ data: r.nodeSizes, usage: "static" } as any);
+    this.nodeShapeBuffer?.({ data: Float32Array.from(r.nodeShapes), usage: "static" } as any);
+    this.uploadStackedNodeStyle();
+    this.edgeStyleColors = r.edgeColors;
+    this.edgeStyleWidths = r.edgeWidths;
+    this.edgeOpacity = r.edgeOpacity;
+    this.arrowScale = r.arrowScale;
+    const curvatureChanged = r.curvature !== this.curvature;
+    this.curvature = r.curvature;
+    this.emitLegends(r);
+    this.dirty = this.densityDirty = this.pointerDirty = true;
+    this.onStyleChange?.();
+    if (rebuildEdges) {
+      this.setEdgeSet(this.filterConnectors(this.allConnectors));
+      void curvatureChanged;
+    }
+  }
+
+  /** Text to draw beside a node, or null. Custom `nodeLabel` text always shows; otherwise it depends on the label mode. */
+  private labelTextFor(n: number, hovered: boolean): string | null {
+    const l = this.labelStyle;
+    if (l.mode === "none") return null;
+    const base = (): string | null => {
+      if (l.attribute === null) return this.nodeKeys[n];
+      const v = this.index.nodes[n]?.attrs[l.attribute];
+      return v === undefined || v === null ? null : String(v);
+    };
+    const custom = this.nodeLabelText[n];
+    if (l.mode === "all" && this.visibleNodeIds.length <= MAX_ALL_LABELS) return custom ?? base();
+    return custom ?? (hovered ? base() : null);
+  }
+
+  private nodeRadiusOf(n: number): number {
+    return (this.nodeSizes[n] ?? this.opts.nodeRadiusPx * 2) / 2;
+  }
+
+  private drawLabelText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number): void {
+    if (this.labelStyle.halo) {
+      ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.strokeText(text, x, y);
+    }
+    ctx.fillText(text, x, y);
+  }
+
+  private emitLegends(r: ResolvedStyle): void {
+    const categorical = (l: ColorLegend | null): ColorLegendEntry[] | null =>
+      l && l.type === "categorical" ? l.entries.map((e) => ({ value: e.value, color: e.color })) : null;
+    this.onNodeColorLegend?.(categorical(r.nodeLegend));
+    this.onEdgeColorLegend?.(categorical(r.edgeLegend));
+    this.onColorLegend?.("node", r.nodeLegend);
+    this.onColorLegend?.("edge", r.edgeLegend);
+  }
+
+  /** The stacked (atlas/ribbon) views index node attributes per slice, so repeat the per-node style for each slice. */
+  private uploadStackedNodeStyle(): void {
+    const slices = this.stackNodeSliceCount, n = this.numNodes;
+    if (slices === 0 || n === 0) return;
+    const colors = new Float32Array(slices * n * 4), sizes = new Float32Array(slices * n);
+    for (let s = 0; s < slices; s++) {
+      colors.set(this.nodeColorValues, s * n * 4);
+      for (let i = 0; i < n; i++) sizes[s * n + i] = this.nodeSizes[i] * 0.8;
+    }
+    this.stackedNodeColorBuffer?.({ data: colors, usage: "static" } as any);
+    this.stackedNodeSizeBuffer?.({ data: sizes, usage: "static" } as any);
   }
 
   getNodeSizeBy(): string | null { return this.nodeSizeBy; }
@@ -1490,6 +1712,7 @@ export class Renderer {
     const ids = new Uint32Array(this.densityMode ? 0 : this.visibleNodeIds.length*this.stackNodeSliceCount);
     if (!this.densityMode) for(let s=0;s<this.stackNodeSliceCount;s++) this.visibleNodeIds.forEach((n,i)=>ids[s*this.visibleNodeIds.length+i]=s*this.numNodes+n);
     this.sliceNodeElements?.({data:ids,primitive:"points"} as any);
+    this.uploadStackedNodeStyle();
   }
 
   private rebuildDensity(): void {
@@ -1609,7 +1832,6 @@ export class Renderer {
     this.positions = new Float32Array(this.numNodes * 2);
     this.evaluateLod();
     this.nodeSizeBy = null;
-    this.nodeSizeBuffer?.({ data: new Float32Array(msg.nodes.length).fill(1), usage: "static" } as any);
     this.updateNodeElements();
     this.positions = new Float32Array(this.numNodes * 2);
     this.positionBuffer?.({ data: this.positions, usage: "dynamic" } as any);
@@ -1619,9 +1841,7 @@ export class Renderer {
     this.idBuffer?.({ data: this.nodeIds, usage: "dynamic" } as any);
 
     this.nodeKeys = msg.nodes.map((n) => String(n.key));
-    this.resolveNodeColors(msg.nodes);
     this.resolveNodeLabels(msg.nodes);
-    this.buildEdgeColorLegend(msg.connectors);
 
     this.allConnectors = msg.connectors.filter((c) => c.endpoints.length === 2);
     this.allHyperedges = msg.connectors.filter((c) => c.endpoints.length > 2);
@@ -1641,39 +1861,15 @@ export class Renderer {
       this.layers.map((l) => ({ id: l.id, key: l.key, color: layerColor(l.id, this.opts.edgeColor) }))
     );
 
+    // A new graph starts from the options' style; anything applied to the previous graph does not carry over.
+    this.styleManager = new StyleManager(this.optionStyle);
+    this.nodeActivityCache = null;
+    this.graphVersion++;
+    this.edgeIndexById = new Map(this.allConnectors.map((c, i) => [c.id, i]));
+    this.resolveStyle(undefined, false);
     this.setEdgeSet(this.allConnectors);
     this.setHyperedgeSet(this.allHyperedges);
     this.onGraphLoaded?.();
-  }
-
-  /** Resolve each node's fill color: nodeColorOverrides (by key) beats
-   * nodeColorBy (by attribute value) beats the plain nodeColor default.
-   * Rebuilds the per-vertex color buffer nodeDraw reads from, and reports
-   * the nodeColorBy legend (or null) via onNodeColorLegend. */
-  private resolveNodeColors(nodes: WireNode[]): void {
-    let palette: Map<string, [number, number, number, number]> | null = null;
-    if (this.nodeColorByAttr) {
-      const attr = this.nodeColorByAttr;
-      palette = buildCategoricalPalette(nodes.map((n) => String(n.attrs[attr] ?? "")));
-    }
-
-    const colors = new Float32Array(nodes.length * 4);
-    nodes.forEach((n, i) => {
-      let color = this.opts.nodeColor;
-      if (palette && this.nodeColorByAttr) {
-        const c = palette.get(String(n.attrs[this.nodeColorByAttr] ?? ""));
-        if (c) color = c;
-      }
-      const override = this.nodeColorOverrides[String(n.key)];
-      if (override) color = override;
-      colors.set(color, i * 4);
-    });
-    this.nodeColorValues = colors;
-    this.nodeColorBuffer?.({ data: colors, usage: "static" } as any);
-
-    this.onNodeColorLegend?.(
-      palette ? Array.from(palette, ([value, color]) => ({ value, color })) : null
-    );
   }
 
   /** Resolve each node's label text from nodeLabelSpec — see
@@ -1696,85 +1892,84 @@ export class Renderer {
     }
   }
 
-  /** Build (but don't apply) the edgeColorBy legend from the full
-   * connector set — resolveEdgeColor() below does the actual per-edge
-   * lookup lazily as each edge set is built. */
-  private buildEdgeColorLegend(connectors: WireConnector[]): void {
-    if (!this.edgeColorByAttr) {
-      this.edgeColorPalette = null;
-      this.onEdgeColorLegend?.(null);
-      return;
-    }
-    const attr = this.edgeColorByAttr;
-    this.edgeColorPalette = buildCategoricalPalette(connectors.map((c) => String(c.attrs[attr] ?? "")));
-    this.onEdgeColorLegend?.(
-      Array.from(this.edgeColorPalette, ([value, color]) => ({ value, color }))
-    );
-  }
-
-  /** Resolve one connector's color: edgeColorOverrides (by "sourceKey||
-   * targetKey") beats edgeColorBy (by attribute value) beats its layer
-   * color beats the plain edgeColor default. */
-  private resolveEdgeColor(c: WireConnector): [number, number, number, number] {
-    let color = layerColor(c.layer_id, this.opts.edgeColor);
-    if (this.edgeColorPalette && this.edgeColorByAttr) {
-      const found = this.edgeColorPalette.get(String(c.attrs[this.edgeColorByAttr] ?? ""));
-      if (found) color = found;
-    }
-    const key = `${this.nodeKeys[c.endpoints[0]]}||${this.nodeKeys[c.endpoints[1]]}`;
-    const override = this.edgeColorOverrides[key];
-    if (override) color = override;
-    return color;
-  }
 
   /** Rebuild edge/arrow geometry from a given connector set — used for the
    * initial full load and for time/layer-filtered subsets. */
+  private edgeColorAt(c: WireConnector): [number, number, number, number] {
+    const i = this.edgeIndexById.get(c.id);
+    if (i === undefined || i * 4 + 3 >= this.edgeStyleColors.length) return layerColor(c.layer_id, this.opts.edgeColor);
+    const o = i * 4;
+    return [this.edgeStyleColors[o], this.edgeStyleColors[o + 1], this.edgeStyleColors[o + 2], this.edgeStyleColors[o + 3]];
+  }
+
+  private edgeWidthAt(c: WireConnector): number {
+    const i = this.edgeIndexById.get(c.id);
+    return i === undefined || i >= this.edgeStyleWidths.length ? this.opts.edgeWidthPx : this.edgeStyleWidths[i];
+  }
+
   private setEdgeSet(connectors: WireConnector[]): void {
     this.dirty = this.densityDirty = true;
     this.visibleConnectorCount = connectors.length;
     this.useThinEdges = connectors.length > Renderer.THIN_EDGE_THRESHOLD;
 
     if (this.useThinEdges) {
-      // Cheap path: index directly into positionBuffer, no per-edge CPU
-      // work needed here or on layout steps (see edgeDrawThin's comment) —
-      // and no `edges` object array either (200K+ small-object
-      // allocations is exactly the kind of per-edge overhead this path
-      // exists to avoid; SVG export falls back to one uniform color for
-      // these, which is what thin mode actually renders anyway).
+      // Cheap path: index directly into positionBuffer, no per-edge CPU work on layout steps (see edgeDrawThin's
+      // comment) and no `edges` object array. Edges are one pixel wide and straight, but each keeps its color: they
+      // are sorted into runs of one color so a handful of draw calls covers them all.
       this.edges = [];
+      this.edgesAreCurved = false;
       this.thinEdgeCount = connectors.length;
-      const thinIndexData = new Uint32Array(connectors.length * 2);
-      connectors.forEach((c, i) => {
-        thinIndexData[i * 2] = c.endpoints[0];
-        thinIndexData[i * 2 + 1] = c.endpoints[1];
-      });
-      this.thinEdgePairs = thinIndexData;
-      this.edgeThinIndexBuffer?.({ data: thinIndexData, primitive: "lines", usage: "static" } as any);
+      const colors = connectors.map((c) => this.edgeColorAt(c));
+      const groups = this.groupThinEdges(colors);
+      const indexData = new Uint32Array(connectors.length * 2);
+      const sortedColors = new Float32Array(connectors.length * 4);
+      const pairs = new Uint32Array(connectors.length * 2);
+      let cursor = 0;
+      this.thinEdgeGroups = [];
+      for (const { color, members } of groups) {
+        this.thinEdgeGroups.push({ color, offset: cursor * 2, count: members.length * 2 });
+        for (const m of members) {
+          const c = connectors[m];
+          indexData[cursor * 2] = pairs[cursor * 2] = c.endpoints[0];
+          indexData[cursor * 2 + 1] = pairs[cursor * 2 + 1] = c.endpoints[1];
+          sortedColors.set(colors[m], cursor * 4);
+          cursor++;
+        }
+      }
+      this.thinEdgePairs = pairs;
+      this.thinEdgeColors = sortedColors;
+      this.edgeThinIndexBuffer?.({ data: indexData, primitive: "lines", usage: "static" } as any);
     } else {
-      this.edges = connectors.map((c) => ({
-        source: c.endpoints[0],
-        target: c.endpoints[1],
-        color: this.resolveEdgeColor(c),
-      }));
+      this.thinEdgeGroups = [];
+      this.edges = connectors.map((c) => ({ source: c.endpoints[0], target: c.endpoints[1], color: this.edgeColorAt(c), width: this.edgeWidthAt(c) }));
       this.thinEdgeCount = 0;
-      // Static per-quad layout (4 vertices: src/-1, src/+1, dst/+1,
-      // dst/-1) and its matching color (repeated for all 4 vertices) and
-      // triangle indices (0,1,2 and 0,2,3, offset per quad).
-      const alongSideData = new Float32Array(this.edges.length * 4 * 2);
-      const colorData = new Float32Array(this.edges.length * 4 * 4);
-      const indexData = new Uint32Array(this.edges.length * 6);
-      const alongSidePattern = [0, -1, 0, 1, 1, 1, 1, -1];
+      this.edgesAreCurved = Math.abs(this.curvature) > 1e-6 && this.edges.length <= CURVED_EDGE_LIMIT;
+      const segments = (this.edgeSegments = this.edgesAreCurved ? CURVE_SEGMENTS : 1);
+      const perEdge = 2 * (segments + 1); // vertices per edge: a (t, -1), (t, +1) pair at every step along it
+      const alongSideData = new Float32Array(this.edges.length * perEdge * 2);
+      const colorData = new Float32Array(this.edges.length * perEdge * 4);
+      const widthData = new Float32Array(this.edges.length * perEdge);
+      const indexData = new Uint32Array(this.edges.length * segments * 6);
       this.edges.forEach((e, i) => {
-        alongSideData.set(alongSidePattern, i * 8);
-        colorData.set(e.color, i * 16);
-        colorData.set(e.color, i * 16 + 4);
-        colorData.set(e.color, i * 16 + 8);
-        colorData.set(e.color, i * 16 + 12);
-        const base = i * 4;
-        indexData.set([base, base + 1, base + 2, base, base + 2, base + 3], i * 6);
+        const base = i * perEdge;
+        for (let k = 0; k <= segments; k++) {
+          const t = k / segments;
+          for (let side = 0; side < 2; side++) {
+            const v = base + 2 * k + side;
+            alongSideData[v * 2] = t;
+            alongSideData[v * 2 + 1] = side === 0 ? -1 : 1;
+            colorData.set(e.color, v * 4);
+            widthData[v] = e.width;
+          }
+        }
+        for (let k = 0; k < segments; k++) {
+          const a = base + 2 * k, o = (i * segments + k) * 6;
+          indexData.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], o);
+        }
       });
       this.edgeAlongSideBuffer?.({ data: alongSideData, usage: "static" } as any);
       this.edgeColorBuffer?.({ data: colorData, usage: "static" } as any);
+      this.edgeWidthBuffer?.({ data: widthData, usage: "static" } as any);
       this.edgeIndexBuffer?.({ data: indexData, usage: "static" } as any);
       this.rebuildEdgePositions();
     }
@@ -1794,20 +1989,45 @@ export class Renderer {
     this.rebuildArrowSrcDst();
   }
 
-  /** Recompute the (source, target) positions baked into the edge quad
-   * buffer from the current position buffer — must be called whenever
-   * positions change (mirrors rebuildArrowSrcDst). Each of a quad's 4
-   * vertices gets the same srcDst pair; only alongSide (static) picks
-   * which endpoint/side a given vertex represents. */
+  /** Group edges by color for the thin-edge path. Colors are quantised (more coarsely if there are very many
+   * distinct ones) so the number of draw calls stays small. */
+  private groupThinEdges(colors: [number, number, number, number][]): { color: [number, number, number, number]; members: number[] }[] {
+    const MAX_GROUPS = 256;
+    for (let bits = 8; bits >= 2; bits -= 2) {
+      const step = 255 / (2 ** bits - 1);
+      const quant = (v: number) => Math.round(Math.round((v * 255) / step) * step) / 255;
+      const groups = new Map<string, { color: [number, number, number, number]; members: number[] }>();
+      let tooMany = false;
+      colors.forEach((c, i) => {
+        if (tooMany) return;
+        const q: [number, number, number, number] = [quant(c[0]), quant(c[1]), quant(c[2]), quant(c[3])];
+        const key = q.join(",");
+        let g = groups.get(key);
+        if (!g) {
+          if (groups.size >= MAX_GROUPS && bits > 2) { tooMany = true; return; }
+          g = { color: q, members: [] };
+          groups.set(key, g);
+        }
+        g.members.push(i);
+      });
+      if (!tooMany) return Array.from(groups.values());
+    }
+    return [];
+  }
+
+  /** Recompute the (source, target) positions baked into the edge vertex buffer from the current position buffer
+   * — must be called whenever positions change (mirrors rebuildArrowSrcDst). Every vertex of an edge gets the same
+   * srcDst pair; only alongSide (static) says where along the edge, and on which side, a vertex sits. */
   private rebuildEdgePositions(): void {
-    const data = new Float32Array(this.edges.length * 4 * 4);
+    const perEdge = 2 * (this.edgeSegments + 1);
+    const data = new Float32Array(this.edges.length * perEdge * 4);
     this.edges.forEach((e, i) => {
       const sx = this.positions[e.source * 2] ?? 0;
       const sy = this.positions[e.source * 2 + 1] ?? 0;
       const tx = this.positions[e.target * 2] ?? 0;
       const ty = this.positions[e.target * 2 + 1] ?? 0;
-      for (let v = 0; v < 4; v++) {
-        const o = (i * 4 + v) * 4;
+      for (let v = 0; v < perEdge; v++) {
+        const o = (i * perEdge + v) * 4;
         data[o] = sx;
         data[o + 1] = sy;
         data[o + 2] = tx;
@@ -2146,12 +2366,29 @@ export class Renderer {
    * positions change. */
   private rebuildArrowSrcDst(): void {
     this.arrowSrcDstData = new Float32Array(this.directedEdges.length * 3 * 4);
+    const curved = this.edgesAreCurved && !this.useThinEdges;
+    const t = this.opts.arrowT;
     for (let i = 0; i < this.directedEdges.length; i++) {
       const { source, target } = this.directedEdges[i];
-      const sx = this.positions[source * 2] ?? 0;
-      const sy = this.positions[source * 2 + 1] ?? 0;
-      const tx = this.positions[target * 2] ?? 0;
-      const ty = this.positions[target * 2 + 1] ?? 0;
+      let sx = this.positions[source * 2] ?? 0;
+      let sy = this.positions[source * 2 + 1] ?? 0;
+      let tx = this.positions[target * 2] ?? 0;
+      let ty = this.positions[target * 2 + 1] ?? 0;
+      if (curved) {
+        // The arrow sits on the curve and points along its tangent: give the shader a segment that passes through
+        // the tip with that direction (it places the tip at src + (dst - src) * arrowT).
+        const dx = tx - sx, dy = ty - sy, len = Math.hypot(dx, dy);
+        if (len > 1e-9) {
+          const cx = (sx + tx) / 2 - (dy / len) * this.curvature * len, cy = (sy + ty) / 2 + (dx / len) * this.curvature * len;
+          const u = 1 - t;
+          const px = u * u * sx + 2 * u * t * cx + t * t * tx, py = u * u * sy + 2 * u * t * cy + t * t * ty;
+          const gx = 2 * u * (cx - sx) + 2 * t * (tx - cx), gy = 2 * u * (cy - sy) + 2 * t * (ty - cy);
+          const gl = Math.hypot(gx, gy) || 1;
+          const ux = gx / gl, uy = gy / gl;
+          sx = px - ux * len * t; sy = py - uy * len * t;
+          tx = sx + ux * len; ty = sy + uy * len;
+        }
+      }
       for (let corner = 0; corner < 3; corner++) {
         const o = (i * 3 + corner) * 4;
         this.arrowSrcDstData[o] = sx;
@@ -2166,7 +2403,7 @@ export class Renderer {
   /** Apply a streamed layout update: re-upload positions to the GPU. */
   applyLayoutStep(msg: LayoutStepMessage): void {
     this.dirty = this.densityDirty = true;
-    this.markLodStale();
+    this.markLodStale(false);
     this.positions = decodePositions(msg);
     this.positionBuffer?.subdata(this.positions);
     this.rebuildArrowSrcDst();
@@ -2185,7 +2422,7 @@ export class Renderer {
     if (this.dirty) {
       this.resizePickFboIfNeeded();
       if (this.densityMode && this.densityDirty) this.rebuildDensity();
-      this.regl.clear({color:this.opts.backgroundColor,depth:1});
+      this.regl.clear({color:this.backgroundColor,depth:1});
       if (this.stackAxis !== null) {
         if (!this.densityMode) this.drawStackThreads();
         this.drawStackedScene();
@@ -2231,8 +2468,10 @@ export class Renderer {
     const ctx = this.labelCtx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.font = "11px system-ui, sans-serif";
-    ctx.fillStyle = "rgba(30, 30, 30, 0.9)";
+    const label = this.labelStyle;
+    const labelFont = `${label.fontSize}px system-ui, sans-serif`, labelFill = rgbaToCss(label.color);
+    ctx.font = labelFont;
+    ctx.fillStyle = labelFill;
     ctx.textBaseline = "middle";
     if (this.densityMode) {
       ctx.fillText(this.densityCaption(), 24, 20); // top edge: the timeline bar covers the bottom
@@ -2264,32 +2503,32 @@ export class Renderer {
         for (const n of this.densityMode ? [] : this.visibleNodeIds) {
           if (this.focusedNodes && !this.focusedNodes.has(n)) continue;
           const hovered = n === this.hoveredNodeId || n === this.selectedNode;
-          const text = this.nodeLabelText[n] ?? (hovered ? this.nodeKeys[n] : null);
+          const text = this.labelTextFor(n, hovered);
           if (!text && !hovered) continue;
           const [nx, ny] = this.worldToScreen(...g.point(n, i), w, h);
           if (hovered) {
             ctx.strokeStyle = "#183e51"; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(nx, ny, this.opts.nodeRadiusPx + 3, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(nx, ny, this.nodeRadiusOf(n) * 0.8 + 3, 0, Math.PI * 2); ctx.stroke();
           }
-          if (text) ctx.fillText(text, nx + this.opts.nodeRadiusPx + 6, ny);
+          if (text) this.drawLabelText(ctx, text, nx + this.nodeRadiusOf(n) * 0.8 + 6, ny);
         }
       });
       return;
     }
     if (this.densityMode) return;
     for (const n of this.visibleNodeIds) {
-      const text = this.nodeLabelText[n] ?? ((n === this.selectedNode || n === this.hoveredNodeId) ? this.nodeKeys[n] : null);
+      const text = this.labelTextFor(n, n === this.selectedNode || n === this.hoveredNodeId);
       if (!text) continue;
       const [x, y] = this.worldToScreen(this.positions[n * 2] ?? 0, this.positions[n * 2 + 1] ?? 0, w, h);
-      ctx.fillText(text, x + this.opts.nodeRadiusPx + 3, y);
+      this.drawLabelText(ctx, text, x + this.nodeRadiusOf(n) + 3, y);
     }
     ctx.strokeStyle = "#183e51"; ctx.lineWidth = 2; ctx.fillStyle = "rgba(24, 62, 81, 0.95)";
     const shown = this.viewNodes();
     for (const n of this.highlighted) {
       if (shown && !shown.has(n)) continue;
       const [x, y] = this.worldToScreen(this.positions[n * 2] ?? 0, this.positions[n * 2 + 1] ?? 0, w, h);
-      ctx.beginPath(); ctx.arc(x, y, this.opts.nodeRadiusPx + 4, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillText(this.nodeKeys[n], x + this.opts.nodeRadiusPx + 8, y - 8);
+      ctx.beginPath(); ctx.arc(x, y, this.nodeRadiusOf(n) + 4, 0, Math.PI * 2); ctx.stroke();
+      this.drawLabelText(ctx, this.nodeKeys[n], x + this.nodeRadiusOf(n) + 8, y - 8);
     }
   }
 
@@ -2321,7 +2560,7 @@ export class Renderer {
 
     const parts: string[] = [
       `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
-      `<rect x="0" y="0" width="${w}" height="${h}" fill="${rgba(this.opts.backgroundColor)}" />`,
+      `<rect x="0" y="0" width="${w}" height="${h}" fill="${rgba(this.backgroundColor)}" />`,
     ];
 
     if (this.densityMode) {
@@ -2423,36 +2662,45 @@ export class Renderer {
         parts.push(`<polygon points="${pointsAttr(pts)}" fill="${rgba(color)}" />`);
       }
 
+      const alpha = (c: [number, number, number, number]): [number, number, number, number] => [c[0], c[1], c[2], c[3] * this.edgeOpacity];
       if (this.useThinEdges) {
-        // Matches edgeDrawThin: one uniform color, no per-edge lookup.
-        const edgeColorCss = rgba(this.opts.edgeColor);
+        // Matches edgeDrawThin: one pixel wide and straight, but each edge keeps its color.
         for (let i = 0; i < this.thinEdgePairs.length; i += 2) {
           const u = this.thinEdgePairs[i];
           const v = this.thinEdgePairs[i + 1];
+          const o = (i / 2) * 4;
+          const stroke = rgba(alpha([this.thinEdgeColors[o], this.thinEdgeColors[o + 1], this.thinEdgeColors[o + 2], this.thinEdgeColors[o + 3]]));
           const [x1, y1] = toScreen(this.positions[u * 2] ?? 0, this.positions[u * 2 + 1] ?? 0);
           const [x2, y2] = toScreen(this.positions[v * 2] ?? 0, this.positions[v * 2 + 1] ?? 0);
-          parts.push(
-            `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${edgeColorCss}" stroke-width="1" />`
-          );
+          parts.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="1" />`);
         }
       } else {
         for (const e of this.edges) {
-          const [x1, y1] = toScreen(this.positions[e.source * 2] ?? 0, this.positions[e.source * 2 + 1] ?? 0);
-          const [x2, y2] = toScreen(this.positions[e.target * 2] ?? 0, this.positions[e.target * 2 + 1] ?? 0);
-          parts.push(
-            `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${rgba(e.color)}" stroke-width="${this.opts.edgeWidthPx}" />`
-          );
+          const sx = this.positions[e.source * 2] ?? 0, sy = this.positions[e.source * 2 + 1] ?? 0;
+          const tx = this.positions[e.target * 2] ?? 0, ty = this.positions[e.target * 2 + 1] ?? 0;
+          const [x1, y1] = toScreen(sx, sy);
+          const [x2, y2] = toScreen(tx, ty);
+          const stroke = rgba(alpha(e.color));
+          if (this.edgesAreCurved) {
+            // The same quadratic Bezier the shader draws (an SVG "Q" segment is exactly that curve).
+            const len = Math.hypot(tx - sx, ty - sy) || 1;
+            const [cx, cy] = toScreen((sx + tx) / 2 - ((ty - sy) / len) * this.curvature * len, (sy + ty) / 2 + ((tx - sx) / len) * this.curvature * len);
+            parts.push(`<path d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${stroke}" stroke-width="${e.width}" />`);
+          } else {
+            parts.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="${e.width}" />`);
+          }
         }
       }
 
       // Arrowheads — same triangle construction as arrowDraw's vertex
       // shader (corner.y in {+-0.5} is why the perpendicular offset below
       // is arrowWidth * 0.5, not arrowWidth).
-      for (const d of this.directedEdges) {
-        const psx = this.positions[d.source * 2] ?? 0;
-        const psy = this.positions[d.source * 2 + 1] ?? 0;
-        const ptx = this.positions[d.target * 2] ?? 0;
-        const pty = this.positions[d.target * 2 + 1] ?? 0;
+      for (let arrow = 0; arrow < this.directedEdges.length; arrow++) {
+        // arrowSrcDstData holds the segment the shader uses: the edge itself, or a tangent segment for curved edges.
+        const psx = this.arrowSrcDstData[arrow * 12];
+        const psy = this.arrowSrcDstData[arrow * 12 + 1];
+        const ptx = this.arrowSrcDstData[arrow * 12 + 2];
+        const pty = this.arrowSrcDstData[arrow * 12 + 3];
         const dx = ptx - psx;
         const dy = pty - psy;
         const len = Math.hypot(dx, dy) || 1;
@@ -2462,20 +2710,34 @@ export class Renderer {
         const perpY = dirX;
         const tipX = psx + dx * this.opts.arrowT;
         const tipY = psy + dy * this.opts.arrowT;
-        const baseX = tipX - dirX * this.opts.arrowLength;
-        const baseY = tipY - dirY * this.opts.arrowLength;
-        const half = this.opts.arrowWidth * 0.5;
+        const baseX = tipX - dirX * this.opts.arrowLength * this.arrowScale;
+        const baseY = tipY - dirY * this.opts.arrowLength * this.arrowScale;
+        const half = this.opts.arrowWidth * this.arrowScale * 0.5;
         const pts: [number, number][] = [
           toScreen(tipX, tipY),
           toScreen(baseX + perpX * half, baseY + perpY * half),
           toScreen(baseX - perpX * half, baseY - perpY * half),
         ];
-        parts.push(`<polygon points="${pointsAttr(pts)}" fill="${rgba(this.opts.arrowColor)}" />`);
+        parts.push(`<polygon points="${pointsAttr(pts)}" fill="${rgba(alpha(this.opts.arrowColor))}" />`);
       }
 
+      // Nodes: each with its own color, size, shape and outline, so the export matches the screen.
+      const outline = this.nodeOutline.width > 0 ? ` stroke="${rgba(this.nodeOutline.color)}" stroke-width="${this.nodeOutline.width}"` : "";
       for (const n of this.visibleNodeIds) {
         const [x, y] = toScreen(this.positions[n * 2] ?? 0, this.positions[n * 2 + 1] ?? 0);
-        parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${this.opts.nodeRadiusPx}" fill="${rgba(this.opts.nodeColor)}" />`);
+        const o = n * 4;
+        const fill = rgba([this.nodeColorValues[o], this.nodeColorValues[o + 1], this.nodeColorValues[o + 2], this.nodeColorValues[o + 3] * this.nodeOpacity]);
+        parts.push(svgNodeShape(this.resolved?.nodeShapes[n] ?? 0, x, y, this.nodeRadiusOf(n), fill, outline));
+      }
+      // Labels the screen shows without hovering (custom labels, or every node in "all" mode).
+      const labelFill = rgba(this.labelStyle.color);
+      for (const n of this.visibleNodeIds) {
+        const text = this.labelTextFor(n, n === this.selectedNode);
+        if (!text) continue;
+        const [x, y] = toScreen(this.positions[n * 2] ?? 0, this.positions[n * 2 + 1] ?? 0);
+        const escaped = text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
+        const halo = this.labelStyle.halo ? ` stroke="rgba(255,255,255,0.85)" stroke-width="3" paint-order="stroke" stroke-linejoin="round"` : "";
+        parts.push(`<text x="${(x + this.nodeRadiusOf(n) + 3).toFixed(1)}" y="${y.toFixed(1)}" font-size="${this.labelStyle.fontSize}" dominant-baseline="middle" fill="${labelFill}"${halo}>${escaped}</text>`);
       }
     }
 
