@@ -41,6 +41,11 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   usable WebGL), the cell used to stay silently blank forever, with nothing in `handle.diagnostics()` either, because the
   reporting code lived inside the thing that never ran. The cell now shows a message after a few seconds, and Python
   gets a report too, from code that runs outside the possibly-blocked part.
+- Sending many widget messages back to back, with nothing awaited between them, is the one thing every reproduction of
+  a viewer stuck with no graph had in common (a small graph's rapid burst of layout_step messages; a large graph's
+  single graph message once it needs several chunks). The widget now pauses briefly (15ms) between chunks sent to the
+  browser. This did not come from a confirmed root cause -- it is the most consistent pattern across every case
+  investigated -- so it may not be the whole answer for every notebook frontend.
 - Closing a widget (`handle.close()`) destroyed the notebook connection and blanked its output, so a notebook that closes
   the previous viewer when it shows the next lost every earlier picture. It now stops the viewer updating and leaves the
   picture on screen, marked as closed.

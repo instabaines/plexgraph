@@ -70,6 +70,13 @@ class Page:
         raise AssertionError(f"timed out; got {[f['message']['type'] for f in self.frames()]}")
 
 
+@pytest.fixture(autouse=True)
+def fast_pacing(monkeypatch):
+    """The real pacing delay between sent chunks (see widget.py) is deliberately real time; tests that are not
+    specifically about it use a negligible value so the suite stays fast."""
+    monkeypatch.setattr(widget_module, "_SEND_PACING_SECONDS", 0.0)
+
+
 @pytest.fixture
 def make_widget():
     made: list[GraphWidget] = []
@@ -487,3 +494,16 @@ def test_a_host_report_is_kept_for_diagnosis(make_widget):
     assert view.diagnostics["host"] == {"hostReceived": 3, "hostRelayed": 3, "hostError": None}
     view._on_page_message(view, {"type": "report", "kind": "host", "data": {"hostReceived": 9, "hostRelayed": 2, "hostError": "boom"}}, [])
     assert view.diagnostics["host"] == {"hostReceived": 9, "hostRelayed": 2, "hostError": "boom"}  # replaced, not merged
+
+
+def test_sending_a_big_frame_in_chunks_is_paced_not_bursted(make_widget, monkeypatch):
+    monkeypatch.setattr(widget_module, "CHUNK_BYTES", 1000)
+    monkeypatch.setattr(widget_module, "_SEND_PACING_SECONDS", 0.05)
+    page = Page(make_widget(_graph(400), layout_iterations=1))  # a graph message that needs several chunks at CHUNK_BYTES=1000
+    start = time.time()
+    page.hello()
+    page.wait_for(lambda fs: fs if fs else None)
+    elapsed = time.time() - start
+    chunks = len([c for c, _ in page.raw])
+    assert chunks >= 3, f"the test graph did not need enough chunks to check pacing with ({chunks})"
+    assert elapsed >= (chunks - 1) * 0.05 * 0.6, f"{chunks} chunks arrived in {elapsed:.2f}s: no real gap between sends"

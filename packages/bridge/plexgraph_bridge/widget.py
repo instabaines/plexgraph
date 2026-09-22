@@ -35,6 +35,8 @@ logger = logging.getLogger("plexgraph_bridge.widget")
 CHUNK_BYTES = 1 << 20
 # Errors a viewer reports are kept, most recent last, up to this many.
 _MAX_REPORTED_ERRORS = 50
+# See the comment in _send_frame.
+_SEND_PACING_SECONDS = 0.015
 
 _SCRIPT = re.compile(r'<script\b[^>]*\bsrc="(?P<src>[^"]+)"[^>]*>\s*</script>')
 _LINK = re.compile(r'<link\b(?P<attrs>[^>]*)>')
@@ -143,7 +145,7 @@ class _WidgetBridge(ClientHub):
     async def _serve(self, stream: int) -> None:
         async def send(data: bytes) -> None:
             if stream == self._stream:  # a stream that has been replaced must not interleave with its successor
-                self._send_frame(stream, data)
+                await self._send_frame(stream, data)
 
         async def until_replaced() -> None:
             await asyncio.Event().wait()  # returns only by being cancelled
@@ -156,7 +158,7 @@ class _WidgetBridge(ClientHub):
             self._last_streaming_error = f"{type(error).__name__}: {error}"
             logger.exception("streaming to the widget failed")
 
-    def _send_frame(self, stream: int, data: bytes) -> None:
+    async def _send_frame(self, stream: int, data: bytes) -> None:
         if getattr(self._widget, "comm", None) is None:
             return  # the widget was closed
         self._frame += 1
@@ -168,6 +170,13 @@ class _WidgetBridge(ClientHub):
             piece = view[index * CHUNK_BYTES:(index + 1) * CHUNK_BYTES]
             self._widget.send({"type": "frame", "stream": stream, "id": self._frame, "index": index, "count": count},
                               [bytes(piece)])
+            # A pace, not a throttle: sending many messages back to back, with nothing awaited in between, is the one
+            # thing every failure seen so far has in common (a small graph's ~200 layout_step messages, and a large
+            # graph's single graph message once it needs many chunks) -- both sent in one uninterrupted burst, and
+            # both went missing after the same small handful of messages. Nothing here proves what in the chain drops
+            # them, but yielding between sends removes the one shared trait of every failure and costs little: at
+            # CHUNK_BYTES-sized pieces this adds under a second even for a very large graph.
+            await asyncio.sleep(_SEND_PACING_SECONDS)
 
     @property
     def stopped(self) -> bool:
