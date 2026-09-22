@@ -345,14 +345,23 @@ served from a small local server. This is what has and has not been checked:
 |---|---|
 | A script on your own computer (Linux desktop) | Verified: opens a browser tab |
 | JupyterLab | Verified end to end in CI with a real JupyterLab and a real browser: the viewer renders in the widget, a style change from another cell arrives live, and it comes back after the page is reloaded. Checked on a 100,000-node graph too |
-| Google Colab | The widget is expected to work (`show()` switches on Colab's custom widget manager, which Colab needs for widgets like this one) but has not been run there. The older iframe route, `widget=False`, was verified by hand |
-| Jupyter Notebook 7, VS Code notebooks, JupyterHub, Binder, Kaggle, Databricks, SageMaker, Azure ML | Expected to work wherever anywidget works. Not verified |
+| Google Colab | **The widget does not work reliably and is off by default there** (see "Known issue" below); `show()` uses the older, port-based route automatically, which was verified by hand |
+| Jupyter Notebook 7, VS Code notebooks, JupyterHub, Binder, Kaggle, Databricks, SageMaker, Azure ML | The widget is expected to work wherever anywidget does, but only JupyterLab has actually been checked; given the Colab result below, treat "expected" cautiously until one of these has been verified too |
 | A local notebook on Windows or macOS | The automated tests cover the Python side there; nobody has looked at the viewer |
 | An SSH session, a container or a server with no desktop | The address is printed. Forward both ports it names (`ssh -L`), then open it |
 
 If the widget does not appear in your notebook, `show(g, widget=False)` uses the older route: a small local server with
 the viewer in an `<iframe>`. That route only works where your browser can reach the machine running Python, so on a
 hosted notebook it can leave a blank frame (`show()` warns on Kaggle, JupyterHub or Binder, and Databricks).
+
+**Known issue: the widget does not reliably deliver the graph on Google Colab.** The widget itself loads correctly there
+(the viewer's own script runs, gets a real WebGL context, and reports so), but the bulk data the kernel sends often
+never arrives in the browser (`handle.diagnostics()["host"]` stays at `{}` or short of what
+`handle.diagnostics()["kernel"]` shows was sent). Everything this project could test outside Colab itself works: the
+same host script at its real size, relaying through its nested iframe, sending the same chunked pattern from an asyncio
+background thread, all succeed there. What is actually different in Colab's own kernel-to-browser message delivery has
+not been identified. Because of this, `show()` defaults to the port-based route on Colab (`widget=False`'s behavior)
+regardless of whether anywidget is installed; pass `widget=True` to force the widget there anyway.
 
 ## Jupyter notes
 

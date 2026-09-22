@@ -485,7 +485,12 @@ def show(
             raise ImportError('show(widget=True) needs the anywidget package: pip install "plexgraph[jupyter]"')
         asked_for_widget = bool(widget)
         if widget is None:
-            widget = _widget_available()
+            # The widget's kernel-to-browser delivery of the graph has not been reliable in Google Colab (large or
+            # numerous messages have gone missing there for reasons that have not been pinned down); the older,
+            # port-based route below is what has actually been verified working on Colab. Default to it there until
+            # this is understood; widget=True still asks for the widget explicitly. See "Where it runs" in the user
+            # guide.
+            widget = _widget_available() and notebook != "colab"
         if widget:
             try:
                 return _show_widget(graph, controller, style, notebook=notebook, layout_iterations=layout_iterations,

@@ -334,7 +334,7 @@ def test_colab_switches_on_its_widget_manager_and_gets_the_widget(monkeypatch):
     module.output = types.SimpleNamespace(enable_custom_widget_manager=lambda: enabled.append(True))
     monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
     monkeypatch.setitem(sys.modules, "google.colab", module)
-    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    handle = launcher.show(_graph(), layout_iterations=1, widget=True, return_handle=True)
     try:
         assert enabled == [True] and isinstance(handle.widget, GraphWidget) and handle.ws_port is None
     finally:
@@ -354,9 +354,35 @@ def test_colab_still_gets_a_widget_if_the_widget_manager_cannot_be_switched_on(m
     module.output = types.SimpleNamespace(enable_custom_widget_manager=broken)
     monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
     monkeypatch.setitem(sys.modules, "google.colab", module)
-    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    handle = launcher.show(_graph(), layout_iterations=1, widget=True, return_handle=True)
     try:
         assert isinstance(handle.widget, GraphWidget)
+    finally:
+        handle.close()
+
+
+def test_colab_defaults_to_the_server_route_not_the_widget(monkeypatch):
+    # The widget's delivery of the graph has not been reliable on Colab; until that is understood, the route
+    # verified to work there (the older, port-based one) is what a plain show() gets by default.
+    import IPython
+    import IPython.display
+
+    monkeypatch.setattr(IPython, "get_ipython", lambda: _ColabShell())
+    inline = []
+    monkeypatch.setattr(launcher, "_display_inline", lambda url, **kw: inline.append(url))
+    shown = []
+    monkeypatch.setattr(IPython.display, "display", lambda obj, *a, **k: shown.append(obj))
+    framed = []
+    module = types.ModuleType("google.colab")
+    module.output = types.SimpleNamespace(
+        enable_custom_widget_manager=lambda: None,
+        serve_kernel_port_as_iframe=lambda port, path="/", width="100%", height="400": framed.append((port, path)))
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+    monkeypatch.setitem(sys.modules, "google.colab", module)
+    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        assert handle.widget is None and shown == [] and handle.ws_port is not None
+        assert len(framed) == 1  # the port-based route, not the widget
     finally:
         handle.close()
 

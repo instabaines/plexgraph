@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+### Known issues
+- The notebook widget does not reliably deliver the graph on Google Colab: it loads and runs correctly there, but the
+  bulk data the kernel sends often never reaches the browser, for a reason not identified. `show()` defaults to the
+  older, port-based route on Colab because of this (`widget=True` forces the widget anyway). See "Where it runs" in
+  the user guide.
+
 ## [0.1.1]
 
 ### Added
@@ -12,8 +18,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   the layout and every style change travel over the notebook's own connection. No server is started and no port is
   opened, so it does not depend on your browser being able to reach the machine that runs Python, which is what broke
   in Colab and would break on any hosted notebook. `show(widget=False)` keeps the older local-server route, and it is
-  what `show()` falls back to when `anywidget` is not installed. `show(g, return_handle=True).widget` is the
-  `GraphWidget`, for placing in a layout of your own.
+  what `show()` falls back to when `anywidget` is not installed, and the default on Google Colab specifically (see
+  "Known issues" below). `show(g, return_handle=True).widget` is the `GraphWidget`, for placing in a layout of your own.
 - `anywidget` is an optional extra, `pip install "plexgraph[jupyter]"`, not a requirement: hosted notebooks manage their
   own IPython and ipywidgets, and installing plexgraph must not change them. The widget does not import `websockets`, so
   `pip install --no-deps plexgraph anywidget psygnal` works where nothing at all may be replaced.
