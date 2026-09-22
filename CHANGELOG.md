@@ -5,6 +5,20 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+### Changed
+- **Render-on-demand.** The viewer's frame loop used to run forever at the display refresh rate, even sitting on a
+  converged, unchanging graph. It now stops scheduling itself once nothing is dirty and nothing is pending, and wakes
+  on the things that actually change what's on screen (style changes, hover, wheel/zoom, drag). Verified with a real
+  browser clock: zero frames over 5 seconds of true idle, versus about 300 before. See `benchmarks/README.md` for the
+  full writeup, including a real gap this exposed: code that mutates the camera directly instead of through a real
+  input event no longer wakes the loop (`scripts/benchmark-render.mjs` did this and was fixed).
+- Hovering over the flat (non-stacked) view no longer runs its GPU pick-and-readback on every frame while only the
+  camera is moving (wheel-zoom, a programmatic pan) — it still updates immediately on real pointer movement. This
+  read is a known-expensive, noisy-to-benchmark GPU operation; see `benchmarks/README.md` for what was and was not
+  measured.
+- `loadGraph` no longer allocates the node-position array twice in a row on every graph load (one was discarded
+  unread) — one fewer 800KB allocation per load at 100K nodes.
+
 ### Known issues
 - The notebook widget does not reliably deliver the graph on Google Colab: it loads and runs correctly there, but the
   bulk data the kernel sends often never reaches the browser, for a reason not identified. `show()` defaults to the

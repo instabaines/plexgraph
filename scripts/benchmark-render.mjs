@@ -48,11 +48,27 @@ for (const n of sizes) {
         const modeBuildMs=performance.now()-start;
         start=performance.now(); renderer.applyLayoutStep(step);
         const layoutUpdateMs=performance.now()-start;
-        // Warm up shaders and buffers before measuring frame intervals.
+        // Warm up shaders and buffers before measuring frame intervals -- including the pick shader used by
+        // hover, which is otherwise never touched before the first real hover check and would inflate whichever
+        // frame happens to trigger it first (one-time shader compile, not a per-frame steady-state cost).
         for(let i=0;i<5;i++) await new Promise(requestAnimationFrame);
+        if (mode==='overview' && !renderer.densityMode) {
+          canvas.dispatchEvent(new PointerEvent('pointermove',{clientX:640,clientY:400,bubbles:true}));
+          renderer.updateHover();
+        }
+        // Real wheel-zoom events with the pointer held stationary over the canvas (as if hovering a node while
+        // scrolling to zoom in), not a direct write to the camera's private position: the renderer is
+        // render-on-demand (see loop()/Camera.onChange) and only notices camera movement through Camera's own event
+        // handlers, the same as a real user does. Directly mutating renderer.camera.x would bypass that entirely and
+        // the loop could go idle mid-measurement, silently turning this into a no-op benchmark of vsync alone. Wheel
+        // rather than a drag specifically: dragging moves the pointer every frame too, which alone keeps hover fully
+        // live regardless of the camera-move debounce (see markHoverStale) — wheel-while-hovering is the scenario
+        // that debounce exists for (the camera changes continuously; the pointer does not move at all). The
+        // pointer position was already set above, while warming up the pick shader.
+        await new Promise(requestAnimationFrame);
         const intervals=[]; let previous=performance.now();
         for(let i=0;i<45;i++) {
-          renderer.camera.x += .002;
+          canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:-4,clientX:640,clientY:400,bubbles:true,cancelable:true}));
           await new Promise(requestAnimationFrame);
           const now=performance.now();intervals.push(now-previous);previous=now;
         }

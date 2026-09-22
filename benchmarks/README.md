@@ -118,6 +118,50 @@ case uses about 57 MiB peak RSS; the 5,001-member hyperedge about 46 MiB.
 100K nodes retain repulsion and take roughly 3.2 seconds for ten iterations
 on the measured machine, versus the faster but repulsion-free historical path.
 
+## Rendering: render-on-demand and hover cost
+
+**Render-on-demand, the one item in "Historical implementation priorities"
+above that was not yet done, is now implemented.** The frame loop used to
+call `requestAnimationFrame` unconditionally forever, regardless of whether
+anything was dirty — a converged, unchanging graph sitting on screen still
+ran the browser's compositor at the display refresh rate indefinitely.
+Confirmed with a real browser clock (`scripts/verify-idle.mjs`, in CI): a
+settled graph now produces zero `requestAnimationFrame` calls over a 5-second
+window (previously about 300, at 60Hz), and the loop correctly wakes for a
+style change, a wheel/zoom, or a drag, then settles back to idle afterward.
+Camera changes from wheel/drag now reach the renderer through a callback
+(`Camera.onChange`) rather than being polled every frame; anything that
+directly mutates `renderer.camera.x/y/zoom` instead of going through a real
+input event (as `scripts/benchmark-render.mjs` used to) will no longer wake
+the loop — the benchmark itself was updated to dispatch real wheel/pointer
+events for this reason, not synthesize camera movement directly.
+
+**Hovering in the flat (non-stacked) view does a full extra GPU render pass
+plus a synchronous pixel readback (`regl.read`) to pick what's under the
+cursor**, versus the stacked (atlas/ribbon) views' plain CPU distance check.
+Profiled in isolation this readback alone costs single-digit milliseconds;
+under sandboxed software rendering with other load on the machine it was
+observed ranging from about 7ms to over 150ms for the same call — GPU
+readback is a known-noisy operation to benchmark and this project's SwiftShader
+CI backend is not representative of real hardware here (see the caveats
+above). Whatever the true per-call cost, running it on every dirty frame
+during continuous camera movement is wasteful: it now runs immediately on
+real pointer movement (hover stays instant while genuinely hovering) but is
+debounced to once per ~50ms of quiet while only the camera is moving
+(`markHoverStale`), cutting how often the expensive path runs during a
+wheel-zoom or programmatic pan without changing what a stationary hover
+sees. Not yet explored: an async/non-blocking readback path, or replacing
+GPU picking with CPU-side hit-testing for the flat view the way the stacked
+view already does (deliberately not attempted here — GPU picking was chosen
+specifically to get overlapping-node depth order right; a CPU nearest-node
+check would need to reproduce that correctly, which is more than this pass
+addressed).
+
+A second, unrelated waste found in the same pass: `loadGraph` allocated the
+node-position `Float32Array` twice in a row, discarding the first copy
+unread (nothing between the two allocations writes positions) — one fewer
+800KB allocation per load at 100K nodes.
+
 At 100K nodes the viewer completes continuous-pan checks at approximately
 19–24ms p95 frame intervals on software Chrome. These results are for aggregated
 populations, not full individual-node rendering. Density cells have no individual

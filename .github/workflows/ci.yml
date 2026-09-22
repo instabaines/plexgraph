@@ -121,7 +121,7 @@ jobs:
         env:
           PYTHON_PATH: python
         run: |
-          for script in verify-explore verify-tools verify-lod verify-temporal verify-style; do
+          for script in verify-explore verify-tools verify-lod verify-temporal verify-style verify-idle; do
             echo "::group::$script"
             node scripts/$script.mjs
             echo "::endgroup::"

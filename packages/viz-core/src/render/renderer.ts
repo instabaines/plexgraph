@@ -388,8 +388,14 @@ export class Renderer {
   private visibleNodeIds: number[] = [];
   private nodeElements: ReturnType<Regl["elements"]> | null = null;
   private sliceNodeElements: ReturnType<Regl["elements"]> | null = null;
-  private dirty = true;
-  private pointerDirty = true;
+  // dirty/pointerDirty are accessors, not plain fields, so that ANY code setting them to true (existing call sites
+  // and future ones alike) automatically wakes the frame loop -- see wake() and the render-on-demand note on loop().
+  private _dirty = true;
+  private get dirty(): boolean { return this._dirty; }
+  private set dirty(value: boolean) { this._dirty = value; if (value) this.wake(); }
+  private _pointerDirty = true;
+  private get pointerDirty(): boolean { return this._pointerDirty; }
+  private set pointerDirty(value: boolean) { this._pointerDirty = value; if (value) this.wake(); }
   private lastCamera = "";
   private densityDirty = true;
   private densityNodes = new Float32Array(0);
@@ -406,6 +412,13 @@ export class Renderer {
   private groupBy: string | null = null;
   private lodPending = false;
   private lodChangedAt = 0;
+  // A camera move alone must not force the expensive GPU-readback hover pick (updateHover) every single
+  // frame of a pan/zoom -- confirmed by profiling to cost several ms per call from the readback alone,
+  // dwarfing the draw itself. Real pointer movement still updates hover immediately via pointerDirty;
+  // this only debounces the camera-triggered re-check. updateSliceHover (stacked views) is pure CPU
+  // math and cheap, so it keeps running on every dirty frame unthrottled.
+  private hoverStale = false;
+  private hoverChangedAt = 0;
   private densityCounts: number[] = [];
   private densityGroupKeys: string[] = [];
   private densityLinksShown = 0;
@@ -459,6 +472,13 @@ export class Renderer {
   /** The level of detail may be out of date. A camera move restarts the wait for quiet (so we do not re-evaluate mid
    * drag); streaming layout steps only start it, or a stream that never pauses would keep the view stuck in the
    * overview however far you zoom. */
+  /** Debounced like markLodStale: a camera move alone marks hover possibly-stale rather than forcing an
+   * immediate re-pick, so continuous panning/zooming does not pay a GPU readback every frame. */
+  private markHoverStale(): void {
+    if (!this.hoverStale) this.hoverChangedAt = performance.now();
+    this.hoverStale = true;
+  }
+
   private markLodStale(restartWait = true): void {
     if (!this.needsLod()) return;
     if (!this.lodPending || restartWait) this.lodChangedAt = performance.now();
@@ -636,6 +656,12 @@ export class Renderer {
   private pickFboSize = { width: 0, height: 0 };
 
   private rafHandle: number | null = null;
+  /** Re-arms the frame loop if it has gone idle (render-on-demand: the loop does not run forever, only while
+   * dirty/pointerDirty/lodPending/hoverStale gives it a reason to). Safe to call whether or not it is running. */
+  private wake(): void {
+    if (this.rafHandle === null) this.rafHandle = requestAnimationFrame(this.loop);
+  }
+
   private lastCanvasSize = "";
 
   // Hover/picking state: the pointer position is tracked passively and
@@ -692,7 +718,7 @@ export class Renderer {
       // enable it implicitly.
       extensions: ["OES_element_index_uint"],
     });
-    this.camera = new Camera(canvas);
+    this.camera = new Camera(canvas, () => this.wake());
     this.pickFboSize = { width: Math.max(1, canvas.width), height: Math.max(1, canvas.height) };
     this.pickFbo = this.regl.framebuffer({
       width: this.pickFboSize.width,
@@ -1830,11 +1856,13 @@ export class Renderer {
     this.groupBy = null;
     this.selectedNode = null;
     this.numNodes = msg.nodes.length;
+    // One allocation, not two: evaluateLod/updateNodeElements below only read positions (nodesInViewport), and every
+    // node starts at the origin regardless of which fresh, zero-filled array they read it from — a second identical
+    // allocation right after was pure waste (800KB thrown away per load at 100K nodes).
     this.positions = new Float32Array(this.numNodes * 2);
     this.evaluateLod();
     this.nodeSizeBy = null;
     this.updateNodeElements();
-    this.positions = new Float32Array(this.numNodes * 2);
     this.positionBuffer?.({ data: this.positions, usage: "dynamic" } as any);
 
     this.nodeIds = new Float32Array(this.numNodes);
@@ -2416,6 +2444,11 @@ export class Renderer {
     if (this.stackAxis !== null) this.rebuildStackedPositions();
   }
 
+  /** Render-on-demand: this only runs while something needs it. It stops scheduling itself (rafHandle = null, no
+   * running RAF) once a frame finds nothing dirty and nothing pending (LOD/hover debounce); wake() -- called
+   * automatically whenever dirty/pointerDirty is set true, and directly by Camera on wheel/drag -- restarts it. A
+   * viewer sitting on a converged, unchanging graph therefore does not run the browser's compositor and burn CPU
+   * forever; it draws its last frame and goes quiet until something actually changes. */
   private loop = (): void => {
     // regl reads the drawing-buffer size when it is polled, and this loop draws without regl.frame, so nothing polls it.
     // A canvas that was resized after regl started (a viewer created inside a container that had no size yet, as in a
@@ -2423,7 +2456,7 @@ export class Renderer {
     const size = `${this.canvas.width}x${this.canvas.height}`;
     if (size !== this.lastCanvasSize) { this.lastCanvasSize = size; this.regl.poll(); }
     const camera = `${this.camera.x},${this.camera.y},${this.camera.zoom},${this.canvas.width},${this.canvas.height}`;
-    if (camera !== this.lastCamera) { this.lastCamera = camera; this.dirty = this.pointerDirty = true; this.markLodStale(); }
+    if (camera !== this.lastCamera) { this.lastCamera = camera; this.dirty = true; this.markLodStale(); this.markHoverStale(); }
     if (this.lodPending && performance.now() - this.lodChangedAt > 160) this.applyLod();
     if (this.dirty) {
       this.resizePickFboIfNeeded();
@@ -2435,14 +2468,23 @@ export class Renderer {
       } else if (this.densityMode) this.drawDensity(0);
       else { this.drawHyperedges(); this.drawEdges(); this.drawArrows(); this.drawNodes(); }
     }
-    if (this.pointerDirty || this.dirty) {
+    // updateSliceHover (stacked views) is cheap and always runs while dirty; updateHover (flat views) does a
+    // GPU pick pass plus a synchronous readback, so it only runs on real pointer movement or once camera movement
+    // has been quiet for a moment -- see markHoverStale. This check is unconditional (like the LOD one above), not
+    // nested inside `if (this.dirty)`: dirty goes false as soon as the camera stops, and the deferred hover update
+    // must still happen after that point, not only while something else keeps the frame dirty.
+    const hoverSettled = this.hoverStale && performance.now() - this.hoverChangedAt > 50;
+    if (this.pointerDirty || this.dirty || hoverSettled) {
       if (this.densityMode) this.setHovered(null);
       else if (this.stackAxis !== null) this.updateSliceHover();
-      else this.updateHover();
+      else if (this.pointerDirty || hoverSettled) { this.hoverStale = false; this.updateHover(); }
       this.drawLabels();
     }
     this.dirty = this.pointerDirty = false;
-    this.rafHandle = requestAnimationFrame(this.loop);
+    // The canvas-size/camera polling above is why this must keep running while lodPending/hoverStale are waiting out
+    // their debounce window (nothing else would ever re-check them); otherwise, with nothing left to do, it stops.
+    if (this.lodPending || this.hoverStale) this.rafHandle = requestAnimationFrame(this.loop);
+    else this.rafHandle = null;
   };
 
   private resizePickFboIfNeeded(): void {

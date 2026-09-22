@@ -7,7 +7,10 @@ export class Camera {
   y = 0;
   zoom = 1;
 
-  constructor(private canvas: HTMLCanvasElement) {
+  // The renderer's frame loop only runs while something needs it (render-on-demand); a camera change from wheel/drag
+  // is otherwise invisible to it (this class has no other link to the renderer), so it is told directly. Optional so
+  // tests and other direct users of Camera do not need to supply one.
+  constructor(private canvas: HTMLCanvasElement, private onChange?: () => void) {
     canvas.addEventListener("wheel", this.onWheel, { passive: false });
     canvas.addEventListener("pointerdown", this.onPointerDown);
   }
@@ -20,6 +23,7 @@ export class Camera {
     e.preventDefault();
     const factor = Math.exp(-e.deltaY * 0.001);
     this.zoom = Math.min(50, Math.max(0.02, this.zoom * factor));
+    this.onChange?.();
   };
 
   private onPointerDown = (e: PointerEvent) => {
@@ -40,6 +44,7 @@ export class Camera {
     const scale = 2 / (this.canvas.clientHeight * this.zoom);
     this.x -= dx * scale;
     this.y += dy * scale;
+    this.onChange?.();
   };
 
   private onPointerUp = () => {
