@@ -24,22 +24,34 @@ and, for each artifact, installs it into an empty virtual environment and runs a
 this checkout: the version, the implementation packages, `python -m plexgraph info`, the `plexgraph` command, the bundled viewer
 over HTTP, a WebSocket client receiving the graph and its style, a live style change, and clear errors.
 
+## Branches
+
+Day-to-day work happens on `develop` (the GitHub default branch: new PRs target it unless you say otherwise). `master`
+only ever moves by a `develop` → `master` pull request, right before a release, and only tags on `master` reach real PyPI
+(`release.yml`'s tag trigger fires wherever the tag lands, so a tag must be made on `master`, not `develop`). This is
+deliberate: TestPyPI is where you find out a release is broken, and it costs nothing to be wrong there; PyPI does not let
+you reuse a version number, so `master` should only ever get code that has already been tried on TestPyPI.
+
 ## Making a release
 
-1. **Pick the version** (`0.2.0`, `0.2.0rc1`, ...) and set it everywhere: `python scripts/bump_version.py 0.2.0`. It updates
-   `VERSION`, `packages/plexgraph/plexgraph/_version.py` and the `version` of the three source packages; a test fails if any
-   copy disagrees.
+1. **Pick the version** (`0.2.0`, `0.2.0rc1`, ...) and set it everywhere, on `develop`: `python scripts/bump_version.py
+   0.2.0`. It updates `VERSION`, `packages/plexgraph/plexgraph/_version.py` and the `version` of the three source
+   packages; a test fails if any copy disagrees.
 2. **Write the changelog**: move the `[Unreleased]` entries in `CHANGELOG.md` under a new `## [0.2.0]` heading and add the
    comparison link at the bottom. The release notes on GitHub are taken from this section, and a test fails if the current
    version has no entry.
-3. **Refresh the lock** if dependencies changed (`uv lock`), commit, and open a pull request. CI must pass: the frontend,
+3. **Refresh the lock** if dependencies changed (`uv lock`) and commit to `develop`. CI must pass there: the frontend,
    Python 3.11 to 3.14 on Linux, macOS and Windows, mypy, the browser end-to-end tests, and the release build and install
    checks.
-4. **Try TestPyPI**: Actions, Release, Run workflow, target `testpypi`. Then in a clean environment:
+4. **Try TestPyPI, from `develop`**: Actions, Release, Run workflow, pick the `develop` branch as the ref, target
+   `testpypi`. Then in a clean environment:
    `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ plexgraph==0.2.0`.
-5. **Tag**: `git tag v0.2.0 && git push origin v0.2.0`. The Release workflow checks that the tag matches `VERSION`, builds,
-   runs the tests and `check_release.py`, checks the wheel on Linux, macOS and Windows, publishes to PyPI, and creates a
-   GitHub release with the artifacts and the changelog section.
+   If something's wrong, fix it on `develop` and try again — nothing has touched `master` or real PyPI yet.
+5. **Open the `develop` → `master` pull request** once TestPyPI looks right, and merge it. This is the one PR that goes
+   to `master`; everything else targets `develop`.
+6. **Tag `master`**: `git checkout master && git pull && git tag v0.2.0 && git push origin v0.2.0`. The Release workflow
+   checks that the tag matches `VERSION`, builds, runs the tests and `check_release.py`, checks the wheel on Linux, macOS
+   and Windows, publishes to PyPI, and creates a GitHub release with the artifacts and the changelog section.
 
 ## One-time setup
 
