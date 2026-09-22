@@ -32,6 +32,11 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   address, with the token, for your own WebSocket clients.
 
 ### Fixed
+- **If the embedded viewer never starts at all** (its script is blocked by the page — a strict
+  Content-Security-Policy with no `unsafe-inline` for scripts is one real way that happens — or the browser has no
+  usable WebGL), the cell used to stay silently blank forever, with nothing in `handle.diagnostics()` either, because the
+  reporting code lived inside the thing that never ran. The cell now shows a message after a few seconds, and Python
+  gets a report too, from code that runs outside the possibly-blocked part.
 - Closing a widget (`handle.close()`) destroyed the notebook connection and blanked its output, so a notebook that closes
   the previous viewer when it shows the next lost every earlier picture. It now stops the viewer updating and leaves the
   picture on screen, marked as closed.

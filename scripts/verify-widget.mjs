@@ -144,6 +144,25 @@ try {
   assert.ok(await share(frame, () => hex('#dc143c')) >= 0.6, 'and still shows it');
   console.log('ok: a closed viewer keeps its picture');
 
+  // 6. If the embedded viewer never starts (blocked script, no WebGL, anything), the widget must still say so in the
+  // cell and to Python, instead of a silent blank frame that gives nobody anything to act on.
+  await open();
+  const run = i => page.evaluate(i => { const nb = window.jupyterapp.shell.currentWidget.content; nb.activeCellIndex = i; return window.jupyterapp.commands.execute('notebook:run-cell'); }, i);
+  // Deterministic stand-in for "the embedded viewer's script never runs" (a blocking CSP, no usable WebGL, ...): every
+  // srcdoc assignment on an iframe from here on is silently dropped, so the widget's own hello/timeout race is not
+  // needed to test this.
+  await page.evaluate(() => {
+    const real = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
+    Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', { get: real.get, set() {} });
+  });
+  await run(0);   // a fresh h = pg.show(...): its iframe's srcdoc assignment is now a no-op
+  await page.locator('text=/did not start/').waitFor({ timeout: 12000 });
+  console.log('ok: a viewer that never starts says so in the cell');
+  await run(2);  // print('DIAGNOSTICS', ...) again, for this fresh handle
+  const diag = JSON.parse((await page.locator('.jp-OutputArea-output pre').filter({ hasText: 'DIAGNOSTICS' }).last().textContent()).split('DIAGNOSTICS')[1]);
+  assert.ok(diag.errors.some(e => /did not say hello/.test(e.message)), 'the timeout was reported to Python: ' + JSON.stringify(diag.errors));
+  console.log('ok: the startup timeout is reported to Python too');
+
   assert.deepEqual(errors.filter(e => !/ResizeObserver|favicon/.test(e)), [], 'no page errors');
   console.log('PASS: notebook widget renders, restyles live, uses no port, survives a reload, and keeps its picture when closed');
 } catch (error) {
