@@ -20,8 +20,11 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 - `handle.diagnostics()` (and `GraphWidget.diagnostics`) returns what the notebook viewer reports about itself: its canvas
   and window size, pixel ratio, WebGL renderer and whether the context was lost, the level of detail it chose, and any
   errors it hit; and, under `kernel`, counters for how far the round trip to the browser got even if the viewer never
-  reports anything at all (hellos received, frames and bytes sent, and the last error hit while streaming). For working
-  out why a viewer is blank or drawn wrongly on a platform where the browser console is out of reach.
+  reports anything at all (hellos received, frames and bytes sent, and the last error hit while streaming); and, under
+  `host`, what the widget's own host script has itself received and relayed, independent of whether the viewer started
+  -- catching a notebook frontend that does not hand comm messages/buffers over the way JupyterLab's does, which was
+  previously invisible everywhere, including to the kernel. For working out why a viewer is blank or drawn wrongly on a
+  platform where the browser console is out of reach.
 - `scripts/verify-widget.mjs` runs the widget in a real JupyterLab in a real browser (in CI): it renders, a style change
   arrives live, nothing listens on a port, and the viewer comes back after a page reload.
 

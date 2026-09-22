@@ -209,6 +209,7 @@ class GraphWidget(anywidget.AnyWidget):
         self._reports_lock = threading.Lock()
         self._state: dict[str, Any] = {}
         self._errors: list[dict[str, Any]] = []
+        self._host: dict[str, Any] = {}
         self._plexgraph = _WidgetBridge(self, graph, layout_iterations=layout_iterations, seed=seed, style=controller)
         if controller is not None:
             controller.bind(self._plexgraph.push_style)
@@ -230,15 +231,22 @@ class GraphWidget(anywidget.AnyWidget):
                 self._errors.append(data)
                 del self._errors[:-_MAX_REPORTED_ERRORS]
                 logger.warning("the viewer reported an error: %s", data.get("message"))
+            elif kind == "host" and isinstance(data, dict):
+                # From the widget's own host script (outside the possibly-sandboxed iframe): how many messages from
+                # the kernel it has actually seen, distinct from `kernel.framesSent` (what the kernel believes it
+                # sent). The two disagreeing is itself the diagnosis of a delivery problem between them.
+                self._host = data
 
     @property
     def diagnostics(self) -> dict[str, Any]:
         """What the viewer says it sees, for working out why a viewer is blank or drawn wrongly: the size of its canvas
         and window, the pixel ratio, the WebGL renderer and whether its context was lost, what level of detail it chose,
-        and any errors it hit. `state` is empty until the viewer has loaded and settled (a second or two after it
-        appears)."""
+        and any errors it hit. `host` is what the widget's own host script (which runs even if the inner viewer's
+        script never does) has itself received and relayed from the kernel -- comparing `host.hostReceived` against
+        `kernel.framesSent` says whether messages the kernel believes it sent actually reached the browser at all.
+        `state` is empty until the viewer has loaded and settled (a second or two after it appears)."""
         with self._reports_lock:
-            page = {"state": dict(self._state), "errors": list(self._errors)}
+            page = {"state": dict(self._state), "errors": list(self._errors), "host": dict(self._host)}
         return {**page, "kernel": self._plexgraph.counters}
 
     def close(self) -> None:

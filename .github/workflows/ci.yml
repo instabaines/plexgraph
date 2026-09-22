@@ -130,6 +130,8 @@ jobs:
         env:
           PYTHON_PATH: python
         run: node scripts/verify-widget.mjs
+      - name: Notebook widget host script (no kernel needed)
+        run: node scripts/verify-widget-host.mjs
 
   package:
     name: Build and check the release artifacts

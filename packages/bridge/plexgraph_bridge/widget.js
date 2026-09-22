@@ -35,41 +35,73 @@ export default {
       if (iframe.contentWindow) iframe.contentWindow.postMessage(message, "*", transfer || []);
     };
 
+    // Counted and reported to Python (never assumed): how many custom messages this page has actually received from
+    // the kernel, and how many complete frames it relayed on into the iframe. A widget manager that does not deliver
+    // comm messages (or delivers buffers in a shape this code does not expect) the way JupyterLab's does would
+    // otherwise fail completely silently here -- the kernel believes it sent the data (see BridgeWidget.diagnostics()
+    // in Python), and this file is the only place that would ever know delivery did not follow through.
+    let hostReceived = 0, hostRelayed = 0, hostError = null;
+    const reportHost = () => model.send({ type: "report", kind: "host", data: { hostReceived, hostRelayed, hostError } });
+
+    // A buffer may arrive as a typed-array view (the common case) or, depending on the widget manager, as a plain
+    // ArrayBuffer; anything else is a delivery this code does not understand and is worth reporting rather than
+    // guessing at.
+    const toUint8 = (buf) => {
+      if (buf instanceof ArrayBuffer) return new Uint8Array(buf);
+      if (ArrayBuffer.isView(buf)) return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+      throw new TypeError("unexpected buffer type from the widget manager: " + Object.prototype.toString.call(buf));
+    };
+
     // A frame larger than one message travels in pieces (see widget.py); they are put back together here.
     let stream = -1;
     const partial = new Map(); // frame id -> { pieces, received }
-    const frame = (bytes) => toViewer({ plexgraph: "frame", data: bytes }, [bytes]);
+    const frame = (bytes) => { hostRelayed += 1; toViewer({ plexgraph: "frame", data: bytes }, [bytes]); };
 
     const onKernel = (msg, buffers) => {
-      if (msg.type === "closed") { // the kernel stopped this viewer; what it shows stays on screen
-        toViewer({ plexgraph: "closed" });
-        return;
-      }
-      if (msg.type !== "frame" || !buffers.length) return;
-      if (msg.stream !== stream) { // the kernel started over (the viewer reloaded): drop anything half-received
-        stream = msg.stream;
-        partial.clear();
-      }
-      const piece = new Uint8Array(buffers[0].buffer, buffers[0].byteOffset, buffers[0].byteLength);
-      if (msg.count === 1) {
-        frame(piece.slice().buffer);
-        return;
-      }
-      let entry = partial.get(msg.id);
-      if (!entry) {
-        entry = { pieces: new Array(msg.count), received: 0 };
-        partial.set(msg.id, entry);
-      }
-      if (!entry.pieces[msg.index]) {
-        entry.pieces[msg.index] = piece.slice();
-        entry.received += 1;
-      }
-      if (entry.received === msg.count) {
-        partial.delete(msg.id);
-        const whole = new Uint8Array(entry.pieces.reduce((n, p) => n + p.length, 0));
-        let at = 0;
-        for (const p of entry.pieces) { whole.set(p, at); at += p.length; }
-        frame(whole.buffer);
+      try {
+        if (msg.type === "closed") { // the kernel stopped this viewer; what it shows stays on screen
+          toViewer({ plexgraph: "closed" });
+          return;
+        }
+        if (msg.type !== "frame") return;
+        hostReceived += 1;
+        if (!buffers || !buffers.length) throw new Error("a 'frame' message arrived with no buffer attached");
+        if (msg.stream !== stream) { // the kernel started over (the viewer reloaded): drop anything half-received
+          stream = msg.stream;
+          partial.clear();
+        }
+        const piece = toUint8(buffers[0]);
+        if (msg.count === 1) {
+          frame(piece.slice().buffer);
+          return;
+        }
+        let entry = partial.get(msg.id);
+        if (!entry) {
+          entry = { pieces: new Array(msg.count), received: 0 };
+          partial.set(msg.id, entry);
+        }
+        if (!entry.pieces[msg.index]) {
+          entry.pieces[msg.index] = piece.slice();
+          entry.received += 1;
+        }
+        if (entry.received === msg.count) {
+          partial.delete(msg.id);
+          const whole = new Uint8Array(entry.pieces.reduce((n, p) => n + p.length, 0));
+          let at = 0;
+          for (const p of entry.pieces) { whole.set(p, at); at += p.length; }
+          frame(whole.buffer);
+        }
+      } catch (error) {
+        // Reported directly (not relayed through the iframe): this is the one place a failure here would otherwise
+        // be invisible to Python, since the iframe may never receive anything to report a problem of its own about.
+        hostError = String(error && error.message || error);
+        model.send({ type: "report", kind: "error", data: { message: "the widget's host script failed handling a "
+          + "message from the kernel: " + hostError } });
+      } finally {
+        // Every message, not just occasionally: these are small (no binary payload), and staying current matters more
+        // here than saving a few of them -- this is exactly the number a person or Python is reading to find a delivery
+        // problem, and a stale one could itself look like evidence of a problem that is not really there.
+        reportHost();
       }
     };
     model.on("msg:custom", onKernel);
@@ -103,6 +135,7 @@ export default {
 
     el.appendChild(iframe);
     return () => {
+      reportHost();
       clearTimeout(startupTimer);
       window.removeEventListener("message", onViewer);
       model.off("msg:custom", onKernel);

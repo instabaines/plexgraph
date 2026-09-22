@@ -395,8 +395,11 @@ hosted notebook it can leave a blank frame (`show()` warns on Kaggle, JupyterHub
   `h.diagnostics()["kernel"]` says how far the round trip to the browser actually got, even if the viewer's own report
   never arrives: `hellosReceived` is 0 if the browser's "I'm listening" message never reached the kernel at all;
   `framesSent`/`bytesSent` staying 0 despite a hello means streaming did not start (`lastStreamingError` says why, if
-  it raised); those growing while the viewer still reports no graph points at the browser's own delivery of the
-  messages the kernel sent. Please include the output in a bug report.
+  it raised). `h.diagnostics()["host"]` is what the widget's own host script has itself received and relayed into the
+  viewer, independent of whether the viewer ever started; `host.hostReceived` below `kernel.framesSent` means messages
+  the kernel believes it sent did not reach the browser, and `host.hostError` says why one that did arrive failed
+  (a notebook frontend handing buffers over differently than JupyterLab's does, for instance). Please include the
+  output in a bug report.
 
 ## Scale and performance
 

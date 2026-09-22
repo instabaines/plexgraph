@@ -125,6 +125,9 @@ try {
   assert.ok(reported.state.gl.viewport[2] > 100, 'and a viewport that matches it: ' + JSON.stringify(reported.state.gl.viewport));
   assert.ok(reported.kernel.hellosReceived >= 1 && reported.kernel.framesSent >= 1 && reported.kernel.bytesSent > 0,
     'the kernel-side counters show the round trip happened: ' + JSON.stringify(reported.kernel));
+  assert.equal(reported.host.hostReceived, reported.kernel.framesSent, 'the host script received everything the kernel sent: ' + JSON.stringify(reported));
+  assert.equal(reported.host.hostRelayed, reported.host.hostReceived, 'and relayed all of it on into the iframe');
+  assert.equal(reported.host.hostError, null);
   console.log('ok: the viewer reports its state to the kernel');
 
   // 4. Reloading the page brings the viewer back. The kernel is still running with the graph and its style, so the

@@ -409,7 +409,7 @@ def test_the_hosted_notebook_warning_says_how_to_get_the_widget(monkeypatch):
 
 def test_the_viewers_state_report_is_kept_for_diagnosis(make_widget):
     view = make_widget()
-    assert view.diagnostics == {"state": {}, "errors": [], "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None}}
+    assert view.diagnostics == {"state": {}, "errors": [], "host": {}, "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None}}
     view._on_page_message(view, {"type": "report", "kind": "state", "data": {"canvas": {"pixels": [868, 348]}, "gl": {"lost": False}}}, [])
     view._on_page_message(view, {"type": "report", "kind": "state", "data": {"canvas": {"pixels": [900, 400]}}}, [])
     assert view.diagnostics["state"] == {"canvas": {"pixels": [900, 400]}}  # the latest
@@ -430,7 +430,7 @@ def test_malformed_reports_are_ignored(make_widget):
     for content in ("text", None, {"type": "report"}, {"type": "report", "kind": "state", "data": "x"},
                     {"type": "report", "kind": "error", "data": 5}, {"type": "report", "kind": "other", "data": {}}):
         view._on_page_message(view, content, [])
-    assert view.diagnostics == {"state": {}, "errors": [], "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None}}
+    assert view.diagnostics == {"state": {}, "errors": [], "host": {}, "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None}}
 
 
 def test_the_handle_exposes_the_diagnostics_and_a_server_viewer_has_none(notebook):
@@ -479,3 +479,11 @@ def test_a_streaming_failure_is_visible_in_the_counters(make_widget, monkeypatch
             break
         time.sleep(0.02)
     assert view.diagnostics["kernel"]["lastStreamingError"] == "RuntimeError: layout blew up"
+
+
+def test_a_host_report_is_kept_for_diagnosis(make_widget):
+    view = make_widget()
+    view._on_page_message(view, {"type": "report", "kind": "host", "data": {"hostReceived": 3, "hostRelayed": 3, "hostError": None}}, [])
+    assert view.diagnostics["host"] == {"hostReceived": 3, "hostRelayed": 3, "hostError": None}
+    view._on_page_message(view, {"type": "report", "kind": "host", "data": {"hostReceived": 9, "hostRelayed": 2, "hostError": "boom"}}, [])
+    assert view.diagnostics["host"] == {"hostReceived": 9, "hostRelayed": 2, "hostError": "boom"}  # replaced, not merged
