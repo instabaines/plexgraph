@@ -656,6 +656,8 @@ export class Renderer {
   private pickFboSize = { width: 0, height: 0 };
 
   private rafHandle: number | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+  private onWindowResize = (): void => this.wake();
   /** Re-arms the frame loop if it has gone idle (render-on-demand: the loop does not run forever, only while
    * dirty/pointerDirty/lodPending/hoverStale gives it a reason to). Safe to call whether or not it is running. */
   private wake(): void {
@@ -730,6 +732,18 @@ export class Renderer {
     canvas.addEventListener("pointerleave", this.onPointerLeave);
     canvas.addEventListener("pointerdown", this.onPointerDown);
     canvas.addEventListener("pointerup", this.onPointerUp);
+    // loop() only notices a canvas resize (window resize, a notebook widget's height changing, ...) by polling
+    // canvas.width/height at its own top; with render-on-demand that no longer runs while idle, so without this the
+    // canvas could sit at its old drawing-buffer size (and the camera at its old aspect ratio) after a resize, until
+    // something unrelated happened to wake the loop. This is what makes a resize itself wake it, independent of
+    // whatever caller resized the element (the app's own resizeCanvas(), a test, or anything else).
+    // Both listeners, not just one: ResizeObserver fires when the canvas's own CSS box size changes (a container
+    // resizing without the window doing so, e.g. a sidebar toggling); window "resize" additionally covers a device
+    // pixel ratio change alone (dragging the window to a differently-scaled display), which typically does not
+    // change the canvas's CSS box size at all and so would not trigger the ResizeObserver by itself.
+    this.resizeObserver = new ResizeObserver(() => this.wake());
+    this.resizeObserver.observe(canvas);
+    window.addEventListener("resize", this.onWindowResize);
 
     {
       const labelCanvas = document.createElement("canvas");
@@ -2795,6 +2809,8 @@ export class Renderer {
 
   dispose(): void {
     if (this.rafHandle !== null) cancelAnimationFrame(this.rafHandle);
+    this.resizeObserver?.disconnect();
+    window.removeEventListener("resize", this.onWindowResize);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);

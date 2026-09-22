@@ -115,6 +115,23 @@ try {
   assert.equal(idleAfterDrag, false, 'the loop did not settle back to idle after the drag ended');
   console.log('ok: the loop settles back to idle after a drag ends');
 
+  // A real window resize must also wake an idle renderer: loop() only notices its canvas's drawing-buffer size by
+  // polling at its own top, which does not run while idle, so nothing else would ever catch a resize that happens
+  // after the graph settled -- the canvas (and the camera's aspect ratio) would silently stay at the old size.
+  const before = await page.evaluate(() => { const c = document.getElementById('canvas'); return { w: c.width, h: c.height }; });
+  await page.setViewportSize({ width: 700, height: 500 });
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => { const c = document.getElementById('canvas'); return { w: c.width, h: c.height }; });
+  assert.notDeepEqual(before, after, 'the canvas did not resize after a real window resize: ' + JSON.stringify({ before, after }));
+  const glViewport = await page.evaluate(() => {
+    const c = document.getElementById('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    return Array.from(gl.getParameter(gl.VIEWPORT));
+  });
+  assert.deepEqual(glViewport.slice(2), [after.w, after.h],
+    'the WebGL viewport does not match the new canvas size -- the renderer never redrew after the resize: ' + JSON.stringify({ glViewport, after }));
+  console.log('ok: a window resize wakes the idle renderer, which redraws at the new size');
+
   await page.screenshot({ path: '/tmp/plexgraph-idle.png' });
   assert.deepEqual(errors, [], 'no page errors');
   console.log('PASS: render-on-demand -- the loop idles when settled and wakes on style changes and camera input');
