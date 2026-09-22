@@ -123,6 +123,8 @@ try {
   assert.ok(reported.state.canvas.pixels[0] > 100 && reported.state.canvas.pixels[1] > 100, 'the viewer reported a real canvas size');
   assert.equal(reported.state.gl.lost, false); assert.deepEqual(reported.errors, []);
   assert.ok(reported.state.gl.viewport[2] > 100, 'and a viewport that matches it: ' + JSON.stringify(reported.state.gl.viewport));
+  assert.ok(reported.kernel.hellosReceived >= 1 && reported.kernel.framesSent >= 1 && reported.kernel.bytesSent > 0,
+    'the kernel-side counters show the round trip happened: ' + JSON.stringify(reported.kernel));
   console.log('ok: the viewer reports its state to the kernel');
 
   // 4. Reloading the page brings the viewer back. The kernel is still running with the graph and its style, so the
@@ -161,6 +163,7 @@ try {
   await run(2);  // print('DIAGNOSTICS', ...) again, for this fresh handle
   const diag = JSON.parse((await page.locator('.jp-OutputArea-output pre').filter({ hasText: 'DIAGNOSTICS' }).last().textContent()).split('DIAGNOSTICS')[1]);
   assert.ok(diag.errors.some(e => /did not say hello/.test(e.message)), 'the timeout was reported to Python: ' + JSON.stringify(diag.errors));
+  assert.equal(diag.kernel.framesSent, 0, 'nothing was ever acknowledged, since hello never arrived: ' + JSON.stringify(diag.kernel));
   console.log('ok: the startup timeout is reported to Python too');
 
   assert.deepEqual(errors.filter(e => !/ResizeObserver|favicon/.test(e)), [], 'no page errors');

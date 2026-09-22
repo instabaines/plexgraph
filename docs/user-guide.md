@@ -391,8 +391,12 @@ hosted notebook it can leave a blank frame (`show()` warns on Kaggle, JupyterHub
   h.diagnostics()   # canvas size, pixel ratio, WebGL renderer and whether its context was lost, level of detail, errors
   ```
 
-  The viewer reports these itself, so it works where the browser's console is out of reach. Please include the output in
-  a bug report.
+  The viewer reports these itself, so it works where the browser's console is out of reach.
+  `h.diagnostics()["kernel"]` says how far the round trip to the browser actually got, even if the viewer's own report
+  never arrives: `hellosReceived` is 0 if the browser's "I'm listening" message never reached the kernel at all;
+  `framesSent`/`bytesSent` staying 0 despite a hello means streaming did not start (`lastStreamingError` says why, if
+  it raised); those growing while the viewer still reports no graph points at the browser's own delivery of the
+  messages the kernel sent. Please include the output in a bug report.
 
 ## Scale and performance
 

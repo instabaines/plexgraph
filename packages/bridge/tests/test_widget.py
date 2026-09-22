@@ -409,7 +409,7 @@ def test_the_hosted_notebook_warning_says_how_to_get_the_widget(monkeypatch):
 
 def test_the_viewers_state_report_is_kept_for_diagnosis(make_widget):
     view = make_widget()
-    assert view.diagnostics == {"state": {}, "errors": []}
+    assert view.diagnostics == {"state": {}, "errors": [], "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None}}
     view._on_page_message(view, {"type": "report", "kind": "state", "data": {"canvas": {"pixels": [868, 348]}, "gl": {"lost": False}}}, [])
     view._on_page_message(view, {"type": "report", "kind": "state", "data": {"canvas": {"pixels": [900, 400]}}}, [])
     assert view.diagnostics["state"] == {"canvas": {"pixels": [900, 400]}}  # the latest
@@ -430,7 +430,7 @@ def test_malformed_reports_are_ignored(make_widget):
     for content in ("text", None, {"type": "report"}, {"type": "report", "kind": "state", "data": "x"},
                     {"type": "report", "kind": "error", "data": 5}, {"type": "report", "kind": "other", "data": {}}):
         view._on_page_message(view, content, [])
-    assert view.diagnostics == {"state": {}, "errors": []}
+    assert view.diagnostics == {"state": {}, "errors": [], "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None}}
 
 
 def test_the_handle_exposes_the_diagnostics_and_a_server_viewer_has_none(notebook):
@@ -442,3 +442,40 @@ def test_the_handle_exposes_the_diagnostics_and_a_server_viewer_has_none(noteboo
         handle.close()
     plain = launcher.ShowHandle(ws_port=1, http_port=None, thread=None, _stop=lambda: None)
     assert plain.diagnostics() == {}
+
+
+def test_the_kernel_counters_show_how_far_the_round_trip_got(make_widget):
+    view = make_widget(_graph(40), layout_iterations=200, seed=1)
+    page = Page(view)
+    assert view.diagnostics["kernel"]["hellosReceived"] == 0
+    page.hello()
+    page.wait_for(lambda fs: fs if len(fs) >= 2 else None)
+    counters = view.diagnostics["kernel"]
+    assert counters["hellosReceived"] == 1
+    assert counters["framesSent"] >= 2 and counters["bytesSent"] > 0
+    assert counters["lastStreamingError"] is None
+    page.hello()  # counted even though it just restarts the same stream
+    assert view.diagnostics["kernel"]["hellosReceived"] == 2
+
+
+def test_a_hello_after_close_is_still_counted(make_widget):
+    view = make_widget()
+    view.close()
+    view._on_page_message(view, {"type": "hello"}, [])
+    assert view.diagnostics["kernel"]["hellosReceived"] == 1
+    assert view.diagnostics["kernel"]["framesSent"] == 0  # stop() means it is not acted on
+
+
+def test_a_streaming_failure_is_visible_in_the_counters(make_widget, monkeypatch):
+    view = make_widget(layout_iterations=5)
+    page = Page(view)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("layout blew up")
+    monkeypatch.setattr(view._plexgraph, "serve_client", broken)
+    page.hello()
+    for _ in range(100):
+        if view.diagnostics["kernel"]["lastStreamingError"] is not None:
+            break
+        time.sleep(0.02)
+    assert view.diagnostics["kernel"]["lastStreamingError"] == "RuntimeError: layout blew up"

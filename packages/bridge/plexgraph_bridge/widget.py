@@ -118,9 +118,16 @@ class _WidgetBridge(ClientHub):
         self._stream = 0
         self._frame = 0
         self._stopped = False
+        # Counters for diagnosing a viewer that never gets its graph: how far the round trip actually got, without
+        # needing the browser's console. Counted regardless of what the code goes on to do with the event.
+        self._hellos_received = 0
+        self._frames_sent = 0
+        self._bytes_sent = 0
+        self._last_streaming_error: str | None = None
 
     def hello(self) -> None:
         """A viewer is listening. Safe to call from any thread."""
+        self._hellos_received += 1
         if not self._stopped:
             self._background.call_soon_threadsafe(self._restart)
 
@@ -145,13 +152,16 @@ class _WidgetBridge(ClientHub):
             await self.serve_client(send, until_replaced)
         except asyncio.CancelledError:
             pass
-        except Exception:
+        except Exception as error:
+            self._last_streaming_error = f"{type(error).__name__}: {error}"
             logger.exception("streaming to the widget failed")
 
     def _send_frame(self, stream: int, data: bytes) -> None:
         if getattr(self._widget, "comm", None) is None:
             return  # the widget was closed
         self._frame += 1
+        self._frames_sent += 1
+        self._bytes_sent += len(data)
         view = memoryview(data)
         count = max(1, -(-len(data) // CHUNK_BYTES))
         for index in range(count):
@@ -162,6 +172,16 @@ class _WidgetBridge(ClientHub):
     @property
     def stopped(self) -> bool:
         return self._stopped
+
+    @property
+    def counters(self) -> dict[str, Any]:
+        """How far the round trip to the browser has actually got: hellosReceived is 0 if the browser's "the viewer is
+        listening" message never reached the kernel at all (points at the comm channel itself, before any of our code
+        runs); framesSent/bytesSent being 0 despite a hello means streaming did not start or failed immediately
+        (lastStreamingError, if any, says why); framesSent growing but the browser reporting no graph points at
+        something between the kernel's model.send() and the browser's postMessage relay."""
+        return {"hellosReceived": self._hellos_received, "framesSent": self._frames_sent,
+                "bytesSent": self._bytes_sent, "lastStreamingError": self._last_streaming_error}
 
     def stop(self) -> None:
         self._stopped = True
@@ -218,7 +238,8 @@ class GraphWidget(anywidget.AnyWidget):
         and any errors it hit. `state` is empty until the viewer has loaded and settled (a second or two after it
         appears)."""
         with self._reports_lock:
-            return {"state": dict(self._state), "errors": list(self._errors)}
+            page = {"state": dict(self._state), "errors": list(self._errors)}
+        return {**page, "kernel": self._plexgraph.counters}
 
     def close(self) -> None:
         """Stop streaming to the viewer. Safe to call twice.
