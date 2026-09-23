@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+## [0.2.0]
+
 ### Added
 - **Plain edge-list files with property columns.** `read_edgelist(path, attrs={"weight": 2, "kind": 3})` loads an
   edge list where extra columns carry arbitrary per-edge properties (usable for color, size, or anything else),
@@ -148,6 +150,7 @@ First release, as a single installable package: `pip install plexgraph`.
 - Hovering picked the first node drawn where nodes overlap instead of the one on top.
 - Zooming into a large graph while its layout was still streaming stayed stuck in the overview.
 
-[Unreleased]: https://github.com/instabaines/plexgraph/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/instabaines/plexgraph/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/instabaines/plexgraph/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/instabaines/plexgraph/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/instabaines/plexgraph/releases/tag/v0.1.0
