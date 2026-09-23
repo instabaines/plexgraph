@@ -5,6 +5,24 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+### Added
+- **Plain edge-list files with property columns.** `read_edgelist(path, attrs={"weight": 2, "kind": 3})` loads an
+  edge list where extra columns carry arbitrary per-edge properties (usable for color, size, or anything else),
+  alongside the existing temporal loader. Delimiter, comments, a header row and custom source/target columns are all
+  configurable, matching `read_temporal_edgelist`'s conventions.
+- **Node attribute tables.** `read_node_attributes(graph, path)` and `read_pandas_node_attributes(graph, df)` enrich
+  an already-loaded graph's nodes from a separate file or DataFrame keyed by node id — a distinct, composable step
+  from loading edges, so a graph can be built from one file and colored/sized from another. `Graph.set_node_attrs`
+  merges attributes into an existing node directly.
+- **Export and round-trip.** `to_pandas_edgelist`, `write_edgelist`, `to_networkx`, `write_graphml` and `write_gexf`
+  save a graph back out, mirroring the load-side functions. Hyperedges (more than two endpoints) can't be represented
+  in any of these plain-edge formats — networkx has the same limitation — so they're skipped with a `UserWarning`
+  rather than silently dropped or raising.
+- **Dashed and dotted edges.** `edge_style="dashed"` (also `"dotted"`, `"dashdot"`, and matplotlib's `"-"`/`"--"`/
+  `":"`/`"-."`) draws edges with a line pattern instead of solid, matching networkx's `style=` parameter (`style=` is
+  accepted as an alias). Available from `show()`, `handle.style()`, and the viewer's Appearance panel ("Line style"),
+  and exported exactly via `stroke-dasharray` in `exportSVG()`.
+
 ### Changed
 - **Render-on-demand.** The viewer's frame loop used to run forever at the display refresh rate, even sitting on a
   converged, unchanging graph. It now stops scheduling itself once nothing is dirty and nothing is pending, and wakes

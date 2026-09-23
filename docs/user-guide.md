@@ -218,6 +218,7 @@ browser tab, shows the current style from its first frame.
 | `node_alpha`, `edge_alpha`, `alpha` | 0-1 (`alpha` sets both) | |
 | `node_outline_color`, `node_outline_width` (`edgecolors`, `linewidths`) | color; pixels | |
 | `edge_curvature` (or `connectionstyle="arc3,rad=0.2"`) | -2 to 2; about 0.2 is typical | edges bend into arcs; parallel edges in opposite directions bend apart |
+| `edge_style` (or `style`) | `"solid"` `"dashed"` `"dotted"` `"dashdot"` (or matplotlib's `-` `--` `:` `-.`) | line pattern; `"solid"` clears an existing pattern |
 | `arrow_scale` | 0-20 | scales arrowheads |
 | `cmap`, `vmin`, `vmax` / `edge_cmap`, `edge_vmin`, `edge_vmax` | colormap name, range | used when colors come from numbers |
 | `with_labels`, `label_mode`, `label_size` (`font_size`), `label_color` (`font_color`), `label_halo`, `label_attribute` | | `label_mode` is `"hover"`, `"all"` or `"none"` |
@@ -260,8 +261,9 @@ Purples Greys YlOrRd`. Categorical palettes: `default tab10 Set1 Set2 Dark2 Pair
 
 The right-hand **Appearance** panel does the same without code: color nodes and edges by one color, attribute,
 degree, weight, time or time bucket (with palettes, colormaps, reverse, bucket count and split), node size, shape,
-opacity and outline, edge width (optionally by weight), opacity, curvature and arrow size, labels (on hover, all, or
-none, with size and halo), and the page background. **Paint nodes** colors the nodes you have selected. **Reset
+opacity and outline, edge width (optionally by weight), opacity, curvature, line style (solid/dashed/dotted/dash-dot)
+and arrow size, labels (on hover, all, or none, with size and halo), and the page background. **Paint nodes** colors
+the nodes you have selected. **Reset
 appearance** goes back to the default look. The panel follows changes made from Python, and the legends show color
 scales: swatches with counts for categories and time buckets, and a gradient bar for colormaps. The same operations
 are on the JavaScript handle: `viewer.setStyle({...})`, `getStyle()`, `resetStyle()`, `paintNodes(ids, color)`,
@@ -269,10 +271,14 @@ are on the JavaScript handle: `viewer.setStyle({...})`, `getStyle()`, `resetStyl
 
 ### Exports and limits
 
-- **SVG export matches the screen** for colors, sizes, shapes, outlines, opacity, curved edges and labels. PNG, JPG,
-  HTML and PDF come from the canvas.
-- Above 20,000 drawn edges edges are one pixel wide and straight, but each keeps its color. Curvature applies up to
-  30,000 edges and is ignored beyond that.
+- **SVG export matches the screen** for colors, sizes, shapes, outlines, opacity, curved edges, line style and
+  labels — dashes export as a native `stroke-dasharray`, which is exact, unlike the on-screen approximation below.
+  PNG, JPG, HTML and PDF come from the canvas.
+- Above 20,000 drawn edges edges are one pixel wide, straight and solid (no curvature or dash), but each keeps its
+  color. Below that, dashing applies regardless of edge count; curvature additionally turns itself off above 30,000
+  edges to keep frames cheap. On screen, dashes measure distance along the straight line between an edge's
+  endpoints, not the true length along a curved edge, so dashes on a curved edge stretch slightly; SVG export does
+  not have this limitation.
 - The stacked (layer atlas and time ribbon) views use node color, size and opacity but draw circles; shape and
   outline apply to the flat view. The density overview (above 5,000 nodes) shows each cell's dominant color.
 - Styles are per session: a new graph starts from the options given to `show()`.
@@ -332,6 +338,55 @@ Pajek, and more (and ships dozens of graph generators), converting *from* a netw
 all of that without this project reimplementing any format parser. `networkx`/`pandas` are optional
 dependencies — only imported when you actually call one of these functions, so you don't need them
 installed otherwise.
+
+### Plain edge-list files with properties
+
+`from_edgelist`/`from_pandas_edgelist` take data already in memory. `read_edgelist` reads a delimited text file
+directly — the same shape `nx.read_edgelist` reads, plus named property columns you can then use for color, size,
+or anything else:
+
+```python
+from plexgraph_core import read_edgelist
+
+# "alice bob 2.5 friend\nbob carol 1.0 coworker\n"
+g = read_edgelist("edges.txt", attrs={"weight": 2, "kind": 3})   # column indexes: weight, then kind
+show(g, edge_color=by_attribute("kind", palette="tab10"), edge_width=size_by_weight((1, 4)))
+```
+
+Delimiter, `comments`, a `header` row (auto-detects column names when `attrs` is left out and there is a header),
+custom `columns=(source_col, target_col)`, and `directed=True` are all supported, matching `read_temporal_edgelist`.
+
+### Node attributes from a separate table
+
+Edge lists only carry per-edge data. To color or size nodes by something not derivable from the graph itself (a
+category, a score, a label from another system), enrich an already-built graph from its own file or DataFrame:
+
+```python
+from plexgraph_core import read_edgelist, read_node_attributes
+
+g = read_edgelist("edges.csv", delimiter=",", header=True)
+read_node_attributes(g, "node_info.csv", delimiter=",")   # id,category,importance header -> attrs auto-named
+show(g, node_color=by_attribute("category"), node_size=size_by_attribute("importance", (6, 24)))
+```
+
+It mutates and returns the same graph, so it composes, and can be called more than once (e.g. two lookup tables
+from different systems, each adding different attributes) without erasing what an earlier call set.
+`read_pandas_node_attributes(graph, df, key="id")` does the same from a DataFrame already in memory.
+
+### Saving and round-tripping
+
+```python
+from plexgraph_core import to_pandas_edgelist, write_edgelist, to_networkx, write_graphml, write_gexf
+
+df = to_pandas_edgelist(g)              # a DataFrame, edge_attr=True by default
+write_edgelist(g, "out.txt", attrs=["weight", "kind"])
+nxg = to_networkx(g)                     # MultiGraph/MultiDiGraph, or Graph/DiGraph with multigraph=False
+write_graphml(g, "out.graphml")          # via networkx
+write_gexf(g, "out.gexf")                # via networkx
+```
+
+None of these plain-edge formats can represent a hyperedge (more than two endpoints) — networkx has the same
+limitation — so hyperedges are skipped with a `UserWarning` rather than silently dropped or raising.
 
 ## Where it runs
 
