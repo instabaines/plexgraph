@@ -1,7 +1,11 @@
 # Read the Docs configuration: build the mkdocs site.
-# The API reference pages import plexgraph/plexgraph_core/plexgraph_bridge, so those three source
-# packages are installed editable first (mirroring .github/workflows/ci.yml's mypy job), then the
-# doc-building tools from docs/requirements.txt.
+#
+# The API reference pages (docs/api/*.md) pull docstrings from plexgraph/plexgraph_core/plexgraph_bridge, but
+# mkdocstrings' Python handler (griffe) reads them by statically parsing the source under mkdocs.yml's
+# `handlers.python.paths` -- it does not import the packages, so they do not need to be installed here. (Installing
+# packages/bridge in particular would fail: its build force-includes the pre-built frontend at packages/app/dist,
+# which only exists after `pnpm --filter @plexgraph/app build`, a step this docs-only build never runs.) Verified by
+# building with only docs/requirements.txt installed and none of the three packages present.
 version: 2
 
 build:
@@ -14,14 +18,4 @@ mkdocs:
 
 python:
   install:
-    - method: pip
-      path: packages/core
-      extra_requirements:
-        - all
-    - method: pip
-      path: packages/bridge
-      extra_requirements:
-        - jupyter
-    - method: pip
-      path: packages/plexgraph
     - requirements: docs/requirements.txt
