@@ -135,3 +135,39 @@ def test_connector_arrays_columnar_export():
     assert arrays["weight"][0] == 2.0
     assert math.isnan(arrays["weight"][1])
     assert arrays["t_start"][1] == 0.0
+
+
+def test_set_node_attrs_merges_into_an_existing_node():
+    g = Graph()
+    g.add_node("a", category="staff")
+    g.set_node_attrs("a", importance=10)
+    assert g.node("a").attrs == {"category": "staff", "importance": 10}
+
+
+def test_set_node_attrs_overwrites_a_same_named_attribute():
+    g = Graph()
+    g.add_node("a", category="staff")
+    g.set_node_attrs("a", category="guest")
+    assert g.node("a").attrs == {"category": "guest"}
+
+
+def test_set_node_attrs_by_internal_id_as_well_as_key():
+    g = Graph()
+    node_id = g.add_node("a")
+    g.set_node_attrs(node_id, category="staff")
+    assert g.node("a").attrs == {"category": "staff"}
+
+
+def test_set_node_attrs_unknown_node_raises():
+    g = Graph()
+    g.add_node("a")
+    with pytest.raises(KeyError):
+        g.set_node_attrs("nope", category="staff")
+
+
+def test_set_node_attrs_does_not_touch_other_nodes():
+    g = Graph()
+    g.add_node("a")
+    g.add_node("b", category="guest")
+    g.set_node_attrs("a", category="staff")
+    assert g.node("b").attrs == {"category": "guest"}

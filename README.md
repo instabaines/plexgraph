@@ -9,10 +9,11 @@ bolted onto a plain-graph model. `plexgraph` instead models every graph as a sin
 representation (see [`docs/architecture`](docs/architecture)) where "plain graph," "multiplex,"
 "hypergraph," and "temporal" are variations of one structure, not separate systems.
 
-**→ [Read the full user guide](docs/user-guide.md)** for how to build graphs (directed, layered,
-temporal, hypergraphs), style them, use the viewer, export, and read data from other sources
-(networkx, pandas, GEXF/GraphML). This README only covers one-time setup and the shortest path to
-a graph on screen.
+**→ [Full documentation](https://plexgraph.readthedocs.io/)** (user guide and API reference), also
+readable in-repo at [docs/user-guide.md](docs/user-guide.md), for how to build graphs (directed,
+layered, temporal, hypergraphs), style them, use the viewer, export, and read data from other
+sources (networkx, pandas, GEXF/GraphML). This README only covers one-time setup and the shortest
+path to a graph on screen.
 
 ## Status
 
@@ -127,6 +128,9 @@ pnpm --filter @plexgraph/viz-core test
 - `docs/user-guide.md` — how to build, style, view, export, and import graphs
 - `docs/architecture` — IR spec, wire protocol spec
 - `docs/adr` — architecture decision records
+- `mkdocs.yml`, `docs/api/` — the [hosted documentation site](https://plexgraph.readthedocs.io/)
+  (user guide + generated API reference); `docs/releasing.md` has the "Documentation" section for
+  previewing it locally
 - `examples` — example scripts and notebooks
 
 See [`docs/architecture/plan.md`](docs/architecture/plan.md) for the full v1 architecture plan.

@@ -103,6 +103,27 @@ try {
   assert.ok((await svg()).match(/<polygon /g).length >= 60, 'shapes by attribute export as polygons');
   await pyOk('handle.style(node_shape="o")');
 
+  // Line style (dashed/dotted/dashdot): the resolved dash array reaches the client, and SVG export uses native
+  // stroke-dasharray, which is exact (unlike the shader's on-screen approximation), so it is checked by value.
+  await pyOk('handle.style(edge_style="dashed")');
+  await settle();
+  let style = await H(() => window.__plexgraphHandle.getStyle());
+  assert.deepEqual(style.edge.dash, [8, 5, 0, 0]);
+  s = await svg();
+  assert.ok(s.includes('stroke-dasharray="8 5"'), 'dashed edges export with a stroke-dasharray');
+  await pyOk('handle.style(edge_style=":")');
+  await settle();
+  assert.deepEqual((await H(() => window.__plexgraphHandle.getStyle())).edge.dash, [1.5, 4, 0, 0]);
+  assert.ok((await svg()).includes('stroke-dasharray="1.5 4"'), 'the ":" alias resolves to a dotted pattern');
+  await pyOk('handle.style(edge_style="dashdot")');
+  await settle();
+  assert.ok((await svg()).includes('stroke-dasharray="8 4 1.5 4"'), 'dashdot keeps all four segments');
+  await pyFails('handle.style(edge_style="zigzag")', /edge_style must be one of/);
+  await pyOk('handle.style(edge_style="solid")');
+  await settle();
+  assert.equal((await H(() => window.__plexgraphHandle.getStyle())).edge.dash ?? null, null, '"solid" clears the dash key (merge deletes it) rather than leaving the old pattern');
+  assert.ok(!(await svg()).includes('stroke-dasharray'), 'solid edges export without a dasharray');
+
   await pyOk('handle.style(edge_color=by_time_bucket(5), edge_width=2.5, edge_curvature=0)');
   await settle();
   const rows = await page.locator('#edge-color-legend .row').allTextContents();
@@ -161,6 +182,13 @@ try {
   const fromPanel = await H(() => window.__plexgraphHandle.getStyle());
   assert.equal(fromPanel.node.size, 18); assert.equal(fromPanel.edge.width, 3);
   assert.equal(await page.getByLabel('Node size', { exact: true }).inputValue(), '18');
+
+  await page.getByLabel('Line style').selectOption('dotted');
+  await settle();
+  assert.deepEqual((await H(() => window.__plexgraphHandle.getStyle())).edge.dash, [1.5, 4, 0, 0], 'the panel drives the dash pattern too');
+  assert.ok((await svg()).includes('stroke-dasharray="1.5 4"'));
+  await page.getByLabel('Line style').selectOption('solid');
+  await settle();
 
   await page.getByLabel('Node color mode').selectOption('attr:team');
   await page.getByLabel('Node palette').selectOption('Set2');

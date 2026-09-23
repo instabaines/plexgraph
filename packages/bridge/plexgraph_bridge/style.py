@@ -44,13 +44,13 @@ RESET = _Reset()
 
 _SETTABLE = {
     "node_color", "node_size", "node_shape", "node_alpha", "node_outline_color", "node_outline_width",
-    "edge_color", "edge_width", "edge_alpha", "edge_curvature", "arrow_scale",
+    "edge_color", "edge_width", "edge_alpha", "edge_curvature", "edge_style", "arrow_scale",
     "label_mode", "label_size", "label_color", "label_halo", "label_attribute",
     "cmap", "vmin", "vmax", "edge_cmap", "edge_vmin", "edge_vmax", "alpha", "background_color",
 }
 # networkx names for the same things
 _ALIASES = {"edgecolors": "node_outline_color", "linewidths": "node_outline_width", "font_size": "label_size",
-            "font_color": "label_color"}
+            "font_color": "label_color", "style": "edge_style"}
 STYLE_OPTIONS = tuple(sorted(_SETTABLE | set(_ALIASES) | {"with_labels", "connectionstyle"}))
 
 
@@ -440,6 +440,30 @@ def _unit(name: str, value: Any) -> Any:
     return float(value)
 
 
+# networkx/matplotlib name -> (dash, gap, dot, gap) in pixels; a dash and a dot share the same on/off shape in the
+# shader, so "dotted" is just a short dash. None (solid) means "no pattern" and is left out of the wire message
+# entirely, so the common case (every edge solid) costs nothing extra to send or to check in the shader.
+_DASH_PATTERNS: dict[str, list[float] | None] = {
+    "solid": None, "-": None,
+    "dashed": [8.0, 5.0, 0.0, 0.0], "--": [8.0, 5.0, 0.0, 0.0],
+    "dotted": [1.5, 4.0, 0.0, 0.0], ":": [1.5, 4.0, 0.0, 0.0],
+    "dashdot": [8.0, 4.0, 1.5, 4.0], "-.": [8.0, 4.0, 1.5, 4.0],
+}
+
+
+def _edge_style(value: Any) -> Any:
+    if value is None or isinstance(value, _Reset):
+        return value
+    if not isinstance(value, str) or value not in _DASH_PATTERNS:
+        raise ValueError(f"edge_style must be one of {sorted(set(_DASH_PATTERNS) - {'-', '--', ':', '-.'})} "
+                         f"(or matplotlib's '-', '--', ':', '-.'), got {value!r}")
+    pattern = _DASH_PATTERNS[value]
+    # "solid"/"-" resolve to None (no dash pattern), but put() treats a bare None as "not given" and skips the
+    # key -- that would silently no-op instead of clearing an existing dash, so go through RESET's explicit-null
+    # path instead. (RESET means "restore the default", and solid IS the default, so this is exactly right.)
+    return RESET if pattern is None else pattern
+
+
 def _curvature(value: Any) -> Any:
     if value is None or isinstance(value, _Reset):
         return value
@@ -527,6 +551,7 @@ def build_style(graph: Graph | _Graph, **options: Any) -> dict[str, Any]:
     put(edge, "width", _size_arg("edge", opts.get("edge_width"), g, "edge_width"))
     put(edge, "opacity", _unit("edge_alpha", opts.get("edge_alpha", alpha)))
     put(edge, "curvature", _curvature(opts.get("edge_curvature")))
+    put(edge, "dash", _edge_style(opts.get("edge_style")))
     scale = opts.get("arrow_scale")
     if scale is not None and not isinstance(scale, _Reset):
         if not isinstance(scale, (int, float, np.number)) or not 0 < scale <= 20:

@@ -160,6 +160,13 @@ class Graph:
         node_id = self._resolve_node(key_or_id)
         return Node(id=node_id, key=self._node_keys[node_id], attrs=self._node_attrs[node_id])
 
+    def set_node_attrs(self, key_or_id: Hashable | NodeId, **attrs: Any) -> None:
+        """Merge attrs into an existing node, overwriting any that already have the same name. For enriching a
+        node after it was created — e.g. `add_node()` from an edge list, then properties from a separate lookup
+        table (see `read_node_attributes`) — not for creating a node; that is still `add_node()`."""
+        node_id = self._resolve_node(key_or_id)
+        self._node_attrs[node_id].update(attrs)
+
     def nodes(self) -> list[Node]:
         return [
             Node(id=i, key=self._node_keys[i], attrs=self._node_attrs[i])

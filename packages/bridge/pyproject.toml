@@ -1,6 +1,6 @@
 [project]
 name = "plexgraph-bridge"
-version = "0.1.1"
+version = "0.2.0"
 description = "Local WebSocket server bridging plexgraph-core and the browser frontend"
 readme = "README.md"
 license = { text = "MIT" }

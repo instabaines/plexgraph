@@ -1,0 +1,84 @@
+site_name: plexgraph
+site_description: Graph visualization for multiplex, hypergraph and temporal networks
+site_url: https://plexgraph.readthedocs.io/
+repo_url: https://github.com/instabaines/plexgraph
+repo_name: instabaines/plexgraph
+edit_uri: edit/develop/docs/
+docs_dir: docs
+
+nav:
+  - Home: index.md
+  - User guide: user-guide.md
+  - API reference:
+      - Overview: api/index.md
+      - Graph model: api/graph.md
+      - Loading & saving graphs: api/io.md
+      - Viewing & styling: api/viewer.md
+  - Architecture: architecture/plan.md
+  - Releasing: releasing.md
+  - Changelog: changelog.md
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - toc.follow
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          # plexgraph re-exports plexgraph_core/plexgraph_bridge, and the three live in separate
+          # package directories (not one shared source root), so griffe needs all three as search
+          # paths to statically resolve those re-exports.
+          paths: ["packages/core", "packages/bridge", "packages/plexgraph"]
+          load_external_modules: true
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            heading_level: 3
+            merge_init_into_class: true
+            show_signature_annotations: true
+            separate_signature: true
+            docstring_section_style: table
+            members_order: source
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.highlight:
+      anchor_linenums: true

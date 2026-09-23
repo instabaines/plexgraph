@@ -31,13 +31,15 @@ export interface ResolvedStyle {
   edgeOpacity: number;
   curvature: number;
   arrowScale: number;
+  /** `[on1, off1, on2, off2]` pixel lengths, or null for a solid line. */
+  dash: number[] | null;
   edgeLegend: ColorLegend | null;
   label: ResolvedLabel;
   background: RGBA;
 }
 
 const NODE_KEYS = ["color", "size", "shape", "opacity", "outline", "label"] as const;
-const EDGE_KEYS = ["color", "width", "opacity", "curvature", "arrowScale"] as const;
+const EDGE_KEYS = ["color", "width", "opacity", "curvature", "arrowScale", "dash"] as const;
 const LABEL_KEYS = ["mode", "fontSize", "color", "halo", "attribute"] as const;
 const TOP_KEYS = ["node", "edge", "background"] as const;
 
@@ -76,6 +78,12 @@ export function validateStyle(spec: StyleSpec): void {
     if (c != null && (!Number.isFinite(c) || Math.abs(c) > 2)) throw new RangeError(`edge.curvature must be a number between -2 and 2, got ${c}`);
     const a = spec.edge.arrowScale;
     if (a != null && (!Number.isFinite(a) || a <= 0 || a > 20)) throw new RangeError(`edge.arrowScale must be a positive number up to 20, got ${a}`);
+    const d = spec.edge.dash;
+    if (d != null) {
+      if (!Array.isArray(d) || d.length !== 4 || d.some(v => !Number.isFinite(v) || v < 0)) {
+        throw new RangeError(`edge.dash must be an array of 4 non-negative numbers [on1, off1, on2, off2], got ${JSON.stringify(d)}`);
+      }
+    }
   }
 }
 
@@ -204,6 +212,7 @@ export class StyleManager {
       edgeOpacity: edge.opacity ?? 1,
       curvature: edge.curvature ?? 0,
       arrowScale: edge.arrowScale ?? 1,
+      dash: edge.dash ?? null,
       edgeLegend: edges.legend,
       label: {
         mode: label.mode ?? "hover",

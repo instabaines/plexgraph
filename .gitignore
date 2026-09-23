@@ -26,3 +26,6 @@ Thumbs.db
 benchmarks/data/
 sample_data/
 dist-wheels/
+
+# Docs
+site/
