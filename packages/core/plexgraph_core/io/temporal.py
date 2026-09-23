@@ -30,6 +30,7 @@ from typing import Any, Hashable, Iterable, Mapping, Sequence
 
 import numpy as np
 
+from plexgraph_core.io._text import attr_value, node_key, read_rows
 from plexgraph_core.model.ir import Graph
 
 # Seconds per unit of each declared numeric epoch.
@@ -223,52 +224,26 @@ def read_temporal_edgelist(
     if len(columns) != need:
         raise ValueError(f"columns must name {need} columns, got {tuple(columns)}")
 
-    def node(text: str) -> Hashable:
-        # Only plain integers that fit in 64 bits: "007" and 24811812513198111524 are names, not numbers.
-        if int_nodes and text.lstrip("-").isdigit() and str(int(text)) == text and abs(int(text)) < 2**63:
-            return int(text)
-        return text
-
-    def value(text: str) -> Any:
-        for kind in (int, float):
-            try:
-                return kind(text)
-            except ValueError:
-                pass
-        return text
-
     attr_columns = dict(attrs or {})
     current_line = 0
 
     def events():
         nonlocal current_line
-        skipped_header = not header
-        # utf-8-sig: a file saved by Excel starts with a byte-order mark, which would otherwise become part of the
-        # first name. Only the line ending is removed, because with an explicit delimiter a trailing empty field
-        # ("a<TAB>b<TAB>5<TAB>") is a real, empty column.
-        with open(path, encoding="utf-8-sig") as fh:
-            for number, raw in enumerate(fh, 1):
-                line = raw.rstrip("\r\n") if delimiter else raw.strip()
-                if not line.strip() or (comments and line.lstrip().startswith(comments)):
-                    continue
-                current_line = number
-                if not skipped_header:
-                    skipped_header = True
-                    continue
-                parts = [p.strip() for p in (line.split(delimiter) if delimiter else line.split())]
+        for parts, number in read_rows(path, delimiter=delimiter, comments=comments, header=header):
+            current_line = number
+            try:
+                picked = [parts[i] for i in columns]
+            except IndexError:
+                raise ValueError(f"{path}:{number}: expected at least {max(columns) + 1} columns, got {len(parts)}") from None
+            head = (node_key(picked[0], int_nodes), node_key(picked[1], int_nodes), *picked[2:])   # times stay text; the clock reads them
+            if attr_columns:
                 try:
-                    picked = [parts[i] for i in columns]
+                    extra = {name: attr_value(parts[i]) for name, i in attr_columns.items()}
                 except IndexError:
-                    raise ValueError(f"{path}:{number}: expected at least {max(columns) + 1} columns, got {len(parts)}") from None
-                head = (node(picked[0]), node(picked[1]), *picked[2:])   # times stay text; the clock reads them
-                if attr_columns:
-                    try:
-                        extra = {name: value(parts[i]) for name, i in attr_columns.items()}
-                    except IndexError:
-                        raise ValueError(f"{path}:{number}: expected at least {max(attr_columns.values()) + 1} columns, got {len(parts)}") from None
-                    yield (*head, extra)
-                else:
-                    yield head
+                    raise ValueError(f"{path}:{number}: expected at least {max(attr_columns.values()) + 1} columns, got {len(parts)}") from None
+                yield (*head, extra)
+            else:
+                yield head
 
     try:
         return from_temporal_edgelist(events(), directed=directed, intervals=intervals, duration=duration,
