@@ -1,8 +1,10 @@
 # User guide
 
 A practical how-to for building graphs, visualizing them, styling them, and getting data in and
-out. For the one-time setup (venvs, building the frontend), see the [README](../README.md#quick-start)
-first — this guide assumes that's done and `from plexgraph_bridge import show` / `from plexgraph_core
+out. If you installed with `pip install plexgraph`, you're ready to go. Working *on* plexgraph itself
+(building the frontend, running the test suites) instead needs the one-time setup in the
+[repository README](https://github.com/instabaines/plexgraph/blob/develop/README.md#quick-start).
+Either way, this guide assumes `from plexgraph_bridge import show` / `from plexgraph_core
 import Graph` work in your shell or notebook.
 
 All of this is also available from one import: `import plexgraph as pg` gives `pg.Graph`, `pg.show`, `pg.by_degree` and the rest
@@ -117,7 +119,8 @@ g.add_hyperedge(["alice", "bob"], layer="friendship", t_start=0, t_end=5)  # can
 
 Everything composes freely: a hyperedge can have a layer and a time window at once, an edge can be
 directed and layered and temporal simultaneously, and so on — see
-[`examples/notebooks/tour.ipynb`](../examples/notebooks/tour.ipynb) for one example of each kind.
+[`examples/notebooks/tour.ipynb`](https://github.com/instabaines/plexgraph/blob/develop/examples/notebooks/tour.ipynb)
+for one example of each kind.
 
 ## Visualizing it
 
@@ -489,7 +492,7 @@ The renderer redraws when data, the camera, filters, or focus changes; pointer
 movement updates interaction overlays without redrawing the graph. Remaining
 large-graph limitations include force-approximation quality, dense neighborhoods,
 and first-frame aggregation cost. Hardware GPU and sustained streaming results
-still need broader validation. See [benchmark results](../benchmarks/README.md).
+still need broader validation. See [benchmark results](https://github.com/instabaines/plexgraph/blob/develop/benchmarks/README.md).
 
 ### Search and neighborhood inspection
 

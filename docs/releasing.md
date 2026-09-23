@@ -62,6 +62,26 @@ The workflows use PyPI **trusted publishing**, so no API token is stored anywher
    `instabaines`, repository `plexgraph`, workflow `release.yml`, environment `pypi` (`testpypi` on TestPyPI).
 2. In the GitHub repository settings, create two environments named `pypi` and `testpypi`. Adding required reviewers to `pypi`
    makes every real release wait for approval.
+3. Import the repository on [Read the Docs](https://readthedocs.org/dashboard/import/) (needs a Read the Docs account
+   linked to GitHub). It finds `.readthedocs.yaml` and `mkdocs.yml` automatically; no further configuration is needed.
+   Once imported, it rebuilds the docs on every push, and the [Documentation](#documentation) notes below apply.
+
+## Documentation
+
+The docs site (`mkdocs.yml`, `docs/`) is separate from the version-tagged PyPI release: once the project is imported on
+Read the Docs (the one-time step above), it rebuilds automatically on every push to `develop` or `master`, following
+whichever branch's docs you're viewing — nothing to run by hand as part of a release.
+
+Preview locally before pushing:
+
+```sh
+uv sync --group docs                 # or: pip install -r docs/requirements.txt
+uv run mkdocs serve                  # or: mkdocs serve, in that environment
+```
+
+then open <http://127.0.0.1:8000>. `mkdocs build --strict` (also run this way) fails the build on a broken internal
+link or a docstring mkdocstrings can't resolve — worth running before pushing a docs change, since Read the Docs runs
+the same build.
 
 ## Notes
 
