@@ -23,8 +23,13 @@ describe("validateStyle", () => {
     expect(() => validateStyle({ node: { outline: { width: -1 } } })).toThrow(/non-negative/);
     expect(() => validateStyle({ node: { label: { fontSize: 2 } } })).toThrow(/between 4 and 72/);
   });
+  it("rejects a malformed dash pattern", () => {
+    expect(() => validateStyle({ edge: { dash: [1, 2, 3] as never } })).toThrow(/edge.dash must be an array of 4 non-negative numbers/);
+    expect(() => validateStyle({ edge: { dash: [1, -2, 0, 0] } })).toThrow(/edge.dash must be an array of 4 non-negative numbers/);
+    expect(() => validateStyle({ edge: { dash: "dashed" as never } })).toThrow(/edge.dash must be an array of 4 non-negative numbers/);
+  });
   it("accepts a full valid style", () => {
-    expect(() => validateStyle({ node: { color: "#f00", size: 12, shape: "square", opacity: 0.5, outline: { color: "#000", width: 1 }, label: { mode: "all", fontSize: 12, halo: true } }, edge: { color: "#ccc", width: 2, opacity: 0.4, curvature: 0.2, arrowScale: 1.5 }, background: "#fff" })).not.toThrow();
+    expect(() => validateStyle({ node: { color: "#f00", size: 12, shape: "square", opacity: 0.5, outline: { color: "#000", width: 1 }, label: { mode: "all", fontSize: 12, halo: true } }, edge: { color: "#ccc", width: 2, opacity: 0.4, curvature: 0.2, arrowScale: 1.5, dash: [8, 5, 0, 0] }, background: "#fff" })).not.toThrow();
   });
 });
 
@@ -58,6 +63,7 @@ describe("StyleManager", () => {
     expect(Array.from(r.nodeSizes)).toEqual([10, 10, 10]);
     expect(Array.from(r.edgeWidths)).toEqual([1.5, 1.5]);
     expect([r.nodeOpacity, r.edgeOpacity, r.curvature, r.arrowScale]).toEqual([1, 1, 0, 1]);
+    expect(r.dash).toBeNull();
     expect(r.label).toMatchObject({ mode: "hover", fontSize: 11, halo: false });
     expect(r.background).toEqual(base.backgroundColor);
   });
@@ -66,7 +72,7 @@ describe("StyleManager", () => {
     const m = new StyleManager();
     const r = m.apply({
       node: { color: { kind: "attribute", attribute: "team", palette: "tab10" }, size: { kind: "attribute", attribute: "v", range: [6, 18] }, shape: "diamond", opacity: 0.5, outline: { color: "#000000", width: 2 }, label: { mode: "all", fontSize: 13, color: "#112233", halo: true } },
-      edge: { color: "#ff0000", width: { kind: "weight", range: [1, 5] }, opacity: 0.4, curvature: 0.25, arrowScale: 2 },
+      edge: { color: "#ff0000", width: { kind: "weight", range: [1, 5] }, opacity: 0.4, curvature: 0.25, arrowScale: 2, dash: [8, 5, 0, 0] },
       background: "#101010",
     }, env, base);
     expect(px(r.nodeColors, 0)).toEqual(px(r.nodeColors, 1));
@@ -79,6 +85,7 @@ describe("StyleManager", () => {
     expect(px(r.edgeColors, 0)).toEqual([1, 0, 0, 1]);
     expect(Array.from(r.edgeWidths)).toEqual([1, 5]);
     expect([r.edgeOpacity, r.curvature, r.arrowScale]).toEqual([0.4, 0.25, 2]);
+    expect(r.dash).toEqual([8, 5, 0, 0]);
     expect(r.label).toMatchObject({ mode: "all", fontSize: 13, halo: true });
     expect(r.background[0]).toBeCloseTo(16 / 255, 3);
   });

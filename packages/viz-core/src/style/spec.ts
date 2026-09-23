@@ -89,6 +89,11 @@ export interface EdgeStyle {
   curvature?: number | null;
   /** Scale arrowheads (1 is the default size). */
   arrowScale?: number | null;
+  /**
+   * Line pattern, as `[on1, off1, on2, off2]` pixel lengths (matplotlib-style dash tuple). `null`/omitted
+   * is solid. A repeating on/off pair with the second pair zeroed gives a simple dash or dot.
+   */
+  dash?: number[] | null;
 }
 
 /** A partial style. Fields you leave out are unchanged; `null` restores that field's default. */

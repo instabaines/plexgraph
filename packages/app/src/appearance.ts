@@ -4,6 +4,15 @@ const DEFAULT_NODE_COLOR = "#2a8bf2";
 const DEFAULT_EDGE_COLOR = "#9999a6";
 const SHAPES: NodeShape[] = ["circle", "square", "triangle", "diamond", "cross"];
 
+// Matches plexgraph_bridge.style._DASH_PATTERNS on the Python side: named patterns as [on1, off1, on2, off2] pixel
+// lengths. Kept in sync manually since the two sides speak the resolved array over the wire, not the name.
+const DASH_PATTERNS: Record<string, number[] | null> = {
+  solid: null,
+  dashed: [8, 5, 0, 0],
+  dotted: [1.5, 4, 0, 0],
+  dashdot: [8, 4, 1.5, 4],
+};
+
 type Child = Node | string;
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { className?: string } = {}, ...children: Child[]): HTMLElementTagNameMap[K] {
   const node = Object.assign(document.createElement(tag), props);
@@ -98,6 +107,7 @@ export function mountAppearance(root: HTMLElement, handle: ViewerHandle, getSele
   const edgeOpacity = slider("Edge opacity", 0.05, 1, 0.05, 1);
   const edgeCurve = slider("Edge curvature", -0.6, 0.6, 0.05, 0);
   const arrowSize = slider("Arrow size", 0.5, 4, 0.1, 1);
+  const edgeLineStyle = select("Line style", [["solid", "Solid"], ["dashed", "Dashed"], ["dotted", "Dotted"], ["dashdot", "Dash-dot"]]);
 
   // ---- labels, page, painting
   const labelMode = select("Labels", [["hover", "On hover"], ["all", "All nodes"], ["none", "None"]]);
@@ -136,7 +146,7 @@ export function mountAppearance(root: HTMLElement, handle: ViewerHandle, getSele
     section("Edges", false,
       field("Color by", edgeMode), ...Object.values(edgeColorRows),
       field("Width", edgeWidth), widthByWeightRow, field("Opacity", edgeOpacity),
-      field("Curvature", edgeCurve), field("Arrow size", arrowSize)),
+      field("Curvature", edgeCurve), field("Arrow size", arrowSize), field("Line style", edgeLineStyle)),
     section("Labels & page", false, field("Labels", labelMode), field("Label size", labelSize), el("label", { className: "check" }, labelHalo, "halo behind text"), field("Background", background)),
     section("Paint nodes", false,
       el("div", { className: "note", textContent: "Select nodes (click them or use +), pick a color, and paint them." }),
@@ -231,6 +241,7 @@ export function mountAppearance(root: HTMLElement, handle: ViewerHandle, getSele
   edgeOpacity.addEventListener("input", () => attempt(() => handle.setStyle({ edge: { opacity: Number(edgeOpacity.value) } })));
   edgeCurve.addEventListener("input", () => attempt(() => handle.setStyle({ edge: { curvature: Number(edgeCurve.value) } })));
   arrowSize.addEventListener("input", () => attempt(() => handle.setStyle({ edge: { arrowScale: Number(arrowSize.value) } })));
+  edgeLineStyle.addEventListener("change", () => attempt(() => handle.setStyle({ edge: { dash: DASH_PATTERNS[edgeLineStyle.value] ?? null } })));
   labelMode.addEventListener("change", applyLabels);
   labelSize.addEventListener("change", applyLabels);
   labelHalo.addEventListener("change", applyLabels);
@@ -285,6 +296,9 @@ export function mountAppearance(root: HTMLElement, handle: ViewerHandle, getSele
       edgeOpacity.value = String(edge.opacity ?? 1);
       edgeCurve.value = String(edge.curvature ?? 0);
       arrowSize.value = String(edge.arrowScale ?? 1);
+      const dash = edge.dash ?? null;
+      const namedDash = Object.entries(DASH_PATTERNS).find(([, pattern]) => JSON.stringify(pattern) === JSON.stringify(dash));
+      edgeLineStyle.value = namedDash ? namedDash[0] : "solid";
       labelMode.value = node.label?.mode ?? "hover";
       labelSize.value = String(node.label?.fontSize ?? 11);
       labelHalo.checked = !!node.label?.halo;

@@ -180,6 +180,32 @@ def test_reset_restores_a_default_and_none_leaves_it_alone():
     assert build_style(g) == {}
 
 
+def test_edge_style_accepts_named_and_matplotlib_dash_patterns():
+    g = small_graph()
+    assert build_style(g, edge_style="dashed")["edge"]["dash"] == [8.0, 5.0, 0.0, 0.0]
+    assert build_style(g, edge_style="--")["edge"]["dash"] == [8.0, 5.0, 0.0, 0.0]
+    assert build_style(g, edge_style="dotted")["edge"]["dash"] == [1.5, 4.0, 0.0, 0.0]
+    assert build_style(g, edge_style=":")["edge"]["dash"] == [1.5, 4.0, 0.0, 0.0]
+    assert build_style(g, edge_style="dashdot")["edge"]["dash"] == [8.0, 4.0, 1.5, 4.0]
+    assert build_style(g, edge_style="-.")["edge"]["dash"] == [8.0, 4.0, 1.5, 4.0]
+    assert build_style(g, style="dashed")["edge"]["dash"] == [8.0, 5.0, 0.0, 0.0]  # networkx-style alias
+
+
+def test_edge_style_solid_explicitly_clears_any_dash_pattern():
+    # "solid" IS the default (no dash), so -- unlike most options where an unset argument means "leave alone" --
+    # passing it explicitly must clear an active pattern, the same as RESET, not silently no-op.
+    g = small_graph()
+    assert build_style(g, edge_style="solid") == {"edge": {"dash": None}}
+    assert build_style(g, edge_style="-") == {"edge": {"dash": None}}
+    assert build_style(g, edge_style=RESET) == {"edge": {"dash": None}}
+
+
+def test_edge_style_rejects_an_unknown_pattern():
+    g = small_graph()
+    with pytest.raises(ValueError, match="edge_style must be one of"):
+        build_style(g, edge_style="zigzag")
+
+
 # --------------------------------------------------------------------------------- merging and state
 
 def test_merge_style_matches_the_viewers_rules():

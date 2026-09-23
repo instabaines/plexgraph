@@ -377,6 +377,7 @@ export class Renderer {
   private edgeOpacity = 1;
   private curvature = 0;
   private arrowScale = 1;
+  private dash: number[] | null = null;
   private onNodeClick: ((nodeId: number, event: { shiftKey: boolean }) => void) | null;
   private onGraphLoaded: (() => void) | null;
   private onGroupClick: ((attribute: string, value: string) => void) | null;
@@ -926,6 +927,10 @@ export class Renderer {
         uniform vec2 viewportSize;
         uniform float curvature;
         varying vec4 vColor;
+        // Distance in screen pixels from the edge's start, used by the fragment shader to dash the line. It is
+        // t times the *straight-line* pixel distance between the endpoints, not the true length along a curved
+        // edge -- a cheap approximation (dashes stretch slightly on curved edges) that needs no extra tessellation.
+        varying float vArcPx;
         void main() {
           vec2 a = srcDst.xy;
           vec2 b = srcDst.zw;
@@ -946,13 +951,25 @@ export class Renderer {
           vec2 ndcPerpUnit = pixelPerp * (2.0 / viewportSize);
           gl_Position = vec4(clip.xy + ndcPerpUnit * alongSide.y * (width * 0.5), 0, 1);
           vColor = color;
+          vec2 clipA = (view * vec3(a, 1.0)).xy;
+          vec2 clipB = (view * vec3(b, 1.0)).xy;
+          vArcPx = t * length((clipB - clipA) * 0.5 * viewportSize);
         }
       `,
       frag: `
         precision mediump float;
         varying vec4 vColor;
+        varying float vArcPx;
         uniform float opacity;
+        // [on1, off1, on2, off2] in pixels; all zero means solid (no dashing).
+        uniform vec4 dashPattern;
         void main() {
+          float total = dashPattern.x + dashPattern.y + dashPattern.z + dashPattern.w;
+          if (total > 0.0001) {
+            float m = mod(vArcPx, total);
+            bool on = m < dashPattern.x || (m >= dashPattern.x + dashPattern.y && m < dashPattern.x + dashPattern.y + dashPattern.z);
+            if (!on) discard;
+          }
           gl_FragColor = vec4(vColor.rgb, vColor.a * opacity);
         }
       `,
@@ -968,6 +985,7 @@ export class Renderer {
         viewportSize: (_ctx: any) => [this.canvas.clientWidth, this.canvas.clientHeight],
         curvature: () => (this.edgesAreCurved ? this.curvature : 0),
         opacity: () => this.edgeOpacity,
+        dashPattern: () => (this.dash ?? [0, 0, 0, 0]),
       },
       blend: OPAQUE_CANVAS_BLEND,
       depth: { enable: false },
@@ -1636,6 +1654,7 @@ export class Renderer {
     this.arrowScale = r.arrowScale;
     const curvatureChanged = r.curvature !== this.curvature;
     this.curvature = r.curvature;
+    this.dash = r.dash;
     this.emitLegends(r);
     this.dirty = this.densityDirty = this.pointerDirty = true;
     this.onStyleChange?.();
@@ -2737,6 +2756,12 @@ export class Renderer {
           parts.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="1" />`);
         }
       } else {
+        // SVG has native dash support, so this is exact (unlike the shader's straight-line-distance
+        // approximation): stroke-dasharray takes the same [on1, off1, on2, off2] pixel lengths directly, cycling
+        // as needed. Trailing zeros (a plain dashed/dotted pattern, not dashdot) are dropped since a zero-length
+        // dash segment renders inconsistently across SVG viewers.
+        const dashArray = this.dash ? (this.dash[2] === 0 && this.dash[3] === 0 ? `${this.dash[0]} ${this.dash[1]}` : this.dash.join(" ")) : null;
+        const dashAttr = dashArray ? ` stroke-dasharray="${dashArray}"` : "";
         for (const e of this.edges) {
           const sx = this.positions[e.source * 2] ?? 0, sy = this.positions[e.source * 2 + 1] ?? 0;
           const tx = this.positions[e.target * 2] ?? 0, ty = this.positions[e.target * 2 + 1] ?? 0;
@@ -2747,9 +2772,9 @@ export class Renderer {
             // The same quadratic Bezier the shader draws (an SVG "Q" segment is exactly that curve).
             const len = Math.hypot(tx - sx, ty - sy) || 1;
             const [cx, cy] = toScreen((sx + tx) / 2 - ((ty - sy) / len) * this.curvature * len, (sy + ty) / 2 + ((tx - sx) / len) * this.curvature * len);
-            parts.push(`<path d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${stroke}" stroke-width="${e.width}" />`);
+            parts.push(`<path d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${stroke}" stroke-width="${e.width}"${dashAttr} />`);
           } else {
-            parts.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="${e.width}" />`);
+            parts.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="${e.width}"${dashAttr} />`);
           }
         }
       }
