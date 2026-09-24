@@ -5,6 +5,12 @@ repo_url: https://github.com/instabaines/plexgraph
 repo_name: instabaines/plexgraph
 edit_uri: edit/develop/docs/
 docs_dir: docs
+# releasing.md is release-process documentation for maintainers, not library documentation, and
+# requirements.txt is the doc-build tooling list -- both live under docs/ but neither belongs on
+# the published site (mkdocs otherwise copies every file under docs_dir into it verbatim).
+exclude_docs: |
+  releasing.md
+  requirements.txt
 
 nav:
   - Home: index.md
@@ -15,7 +21,6 @@ nav:
       - Loading & saving graphs: api/io.md
       - Viewing & styling: api/viewer.md
   - Architecture: architecture/plan.md
-  - Releasing: releasing.md
   - Changelog: changelog.md
 
 theme:
