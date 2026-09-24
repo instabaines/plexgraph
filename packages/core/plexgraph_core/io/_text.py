@@ -1,24 +1,49 @@
 """Shared parsing for delimited text edge-list files (read_edgelist, read_temporal_edgelist): line reading (with the
-comment/blank-line/header handling and BOM safety every one of them needs), and the two value-coercion rules
+comment/blank-line/header handling and BOM safety every one of them needs), the two value-coercion rules
 ("007" is a name, 24811812513198111524 is a name, 3 is a node id" / "3 is an int, 3.5 is a float, x is text") that
-keep the readers behaving the same way. Not part of the public API.
+keep the readers behaving the same way, and two small helpers (node dedup, hyperedge-skip warnings) shared by every
+loader/exporter in this package. Not part of the public API.
 """
 
 from __future__ import annotations
 
-import re
+import warnings
 from pathlib import Path
 from typing import Any, Hashable, Iterator
 
-_NUMBER = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
+from plexgraph_core.model.ir import Graph
 
 
 def node_key(text: str, int_nodes: bool) -> Hashable:
     """A plain integer (no leading zeros, within 64 bits) becomes an int node id unless int_nodes=False; anything
     else — including a number too large for a 64-bit int, which cannot be a real id — stays text."""
-    if int_nodes and text.lstrip("-").isdigit() and str(int(text)) == text and abs(int(text)) < 2**63:
-        return int(text)
+    if int_nodes:
+        # Strip at most one leading '-' before checking digits: text.lstrip("-") would strip every leading '-',
+        # so "--5" would pass an isdigit() check and then crash int("--5") with an uncaught ValueError.
+        body = text[1:] if text.startswith("-") else text
+        if body.isdigit():
+            value = int(text)
+            # A signed 64-bit int's range is [-2**63, 2**63 - 1] -- asymmetric, so abs(value) < 2**63 would wrongly
+            # reject the valid minimum -2**63 (abs(-2**63) == 2**63, which fails a strict '<').
+            if str(value) == text and -(2**63) <= value < 2**63:
+                return value
     return text
+
+
+def ensure_node(graph: Graph, known: set[Hashable], key: Hashable) -> None:
+    """Add `key` to `graph` the first time it's seen, tracking membership in the caller's `known` set so repeated
+    keys (the common case: every edge mentions nodes already added by an earlier edge) don't hit `add_node`'s
+    duplicate-key check. Shared by every loader that builds nodes from edge endpoints."""
+    if key not in known:
+        graph.add_node(key)
+        known.add(key)
+
+
+def warn_skipped_hyperedges(caller: str, count: int, reason: str) -> None:
+    """Warn that `count` hyperedges (more than 2 endpoints) were skipped by `caller`, because `reason` -- shared by
+    every exporter to a plain-edge format, none of which can represent a hyperedge."""
+    if count:
+        warnings.warn(f"{caller}: skipped {count} hyperedge(s) (more than 2 endpoints); {reason}", UserWarning, stacklevel=3)
 
 
 def attr_value(text: str) -> Any:

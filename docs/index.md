@@ -15,9 +15,6 @@ representation (see [Architecture](architecture/plan.md)) where "plain graph," "
 pip install plexgraph
 ```
 
-That installs everything, viewer included, with no Node.js needed. Two extras add optional
-loaders and the notebook widget:
-
 ```sh
 pip install "plexgraph[jupyter]"     # the notebook widget (anywidget) -- see "Jupyter notes" in the user guide
 pip install pandas networkx          # only if you use the pandas/networkx loaders
@@ -49,15 +46,7 @@ pg.show(g, node_color=pg.by_degree("plasma"))
   on, and why.
 - **[Changelog](changelog.md)** -- what changed in each release.
 
-## Status
-
-The layout and sliced renderer are still under evaluation for production use at very large graphs
-(100K+ nodes) -- see the [measured limitations](https://github.com/instabaines/plexgraph/blob/master/benchmarks/README.md)
-and the [evaluation lab](https://github.com/instabaines/plexgraph/blob/master/examples/notebooks/evaluation.ipynb)
-in the repository.
-
 ## Source and license
 
 plexgraph is developed on [GitHub](https://github.com/instabaines/plexgraph), under the
-[MIT license](https://github.com/instabaines/plexgraph/blob/master/LICENSE). Contributions and
-issues are welcome there; see [Releasing](releasing.md) for how new versions ship.
+[MIT license](https://github.com/instabaines/plexgraph/blob/master/LICENSE).

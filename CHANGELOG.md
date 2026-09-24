@@ -25,6 +25,31 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   accepted as an alias). Available from `show()`, `handle.style()`, and the viewer's Appearance panel ("Line style"),
   and exported exactly via `stroke-dasharray` in `exportSVG()`.
 
+### Fixed
+- **`to_pandas_edgelist`, `write_edgelist` and `to_networkx` could export the wrong source/target/layer.** A node or
+  layer given an explicit integer key equal to another node/layer's *internal* id (e.g. a node keyed `1` when some
+  other node happens to be the graph's 2nd node) made these exporters resolve a connector's endpoint to the wrong
+  node, silently — no exception, just wrong data in the output. They now index nodes/layers directly by internal id
+  instead of going through key resolution a second time.
+- `to_pandas_edgelist(edge_attr=["t_end"])` (or `["t_start"]`) silently produced neither column, or both regardless
+  of which was asked for — `t_start`/`t_end` selection is now independent, as the other `edge_attr` fields already were.
+- `write_edgelist`: a connector whose *last* requested attribute was present but happened to be an empty string
+  (`color=""`) was indistinguishable from one where that attribute was entirely absent, so it was silently trimmed
+  from the row — shortening it, and raising a confusing `ValueError` if the file was read back with a fixed column
+  layout. A present empty value and an absent one are now told apart correctly.
+- `write_edgelist`'s default `attrs=["weight"]` (when a graph has any weighted connector) and `to_networkx`'s choice
+  of `DiGraph`/`Graph` could be decided by a hyperedge that then gets skipped from the actual output. Both now look
+  only at the connectors that are actually exported.
+- `read_edgelist`/`read_temporal_edgelist`: a node id with two or more leading minus signs (e.g. `"--5"`) crashed
+  with an uncaught `ValueError` instead of staying text as documented; the true minimum 64-bit integer (`-2**63`)
+  was incorrectly rejected and kept as text due to an asymmetric range check.
+- `read_pandas_node_attributes` didn't apply the same int-node-id coercion as `read_node_attributes`/`read_edgelist`,
+  so a text id column (e.g. read with `dtype=str`) that should match an existing int-keyed node instead silently
+  created a duplicate node.
+- A non-numeric `weight` (e.g. a malformed "weight" column read as text) was silently accepted and stored with the
+  wrong type, surfacing later as a confusing, far-away crash; `Graph.add_edge`/`add_hyperedge` now reject it
+  immediately with a clear error.
+
 ### Changed
 - **Render-on-demand.** The viewer's frame loop used to run forever at the display refresh rate, even sitting on a
   converged, unchanging graph. It now stops scheduling itself once nothing is dirty and nothing is pending, and wakes

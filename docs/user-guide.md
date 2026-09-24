@@ -491,8 +491,7 @@ incident relationships. A neighborhood larger than 5,000 nodes stays aggregated.
 The renderer redraws when data, the camera, filters, or focus changes; pointer
 movement updates interaction overlays without redrawing the graph. Remaining
 large-graph limitations include force-approximation quality, dense neighborhoods,
-and first-frame aggregation cost. Hardware GPU and sustained streaming results
-still need broader validation. See [benchmark results](https://github.com/instabaines/plexgraph/blob/develop/benchmarks/README.md).
+and first-frame aggregation cost. See [benchmark results](https://github.com/instabaines/plexgraph/blob/develop/benchmarks/README.md).
 
 ### Search and neighborhood inspection
 

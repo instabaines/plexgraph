@@ -339,3 +339,123 @@ def test_write_edgelist_skips_hyperedges_with_a_warning(tmp_path):
     with pytest.warns(UserWarning, match="skipped 1 hyperedge"):
         write_edgelist(g, out)
     assert len(open(out).read().splitlines()) == 1
+
+
+# ---- a node/layer's explicit key colliding with another's internal id must not misresolve exports ---------------
+
+
+def _graph_with_a_key_colliding_internal_id():
+    # b's internal id is 1; c is deliberately given the explicit key 1, colliding with it. Both to_pandas_edgelist
+    # and write_edgelist must still report the edge a->b as going to "b", not to c. Edges are built from the string
+    # keys ("a", "b"), which resolve unambiguously -- the collision only matters for the *export* functions, which
+    # must turn the connector's already-resolved internal endpoint ids back into keys without re-resolving them
+    # (re-resolving 1 the same way add_edge did would hit the identical ambiguity a second time).
+    from plexgraph_core.model.ir import Graph
+
+    g = Graph()
+    g.add_node("a")
+    g.add_node("b")
+    g.add_node(1)  # key 1 == b's internal id
+    g.add_edge("a", "b", weight=1.0)
+    return g
+
+
+def test_to_pandas_edgelist_does_not_confuse_a_node_key_with_another_nodes_internal_id():
+    df = to_pandas_edgelist(_graph_with_a_key_colliding_internal_id())
+    assert df.iloc[0]["source"] == "a" and df.iloc[0]["target"] == "b"
+
+
+def test_write_edgelist_does_not_confuse_a_node_key_with_another_nodes_internal_id(tmp_path):
+    out = tmp_path / "out.txt"
+    write_edgelist(_graph_with_a_key_colliding_internal_id(), out, attrs=["weight"])
+    assert open(out).read().splitlines() == ["a b 1.0"]
+
+
+# ---- edge_attr selects t_start/t_end independently, not as a pair gated on "t_start" alone ------------------------
+
+
+def test_to_pandas_edgelist_edge_attr_selects_t_start_and_t_end_independently():
+    from plexgraph_core.model.ir import Graph
+
+    g = Graph()
+    a, b = g.add_node("a"), g.add_node("b")
+    g.add_edge(a, b, t_start=1.0, t_end=5.0)
+
+    only_end = to_pandas_edgelist(g, edge_attr=["t_end"])
+    assert "t_end" in only_end.columns and "t_start" not in only_end.columns
+    assert only_end.iloc[0]["t_end"] == 5.0
+
+    only_start = to_pandas_edgelist(g, edge_attr=["t_start"])
+    assert "t_start" in only_start.columns and "t_end" not in only_start.columns
+
+
+# ---- a present-but-empty trailing attribute must not be confused with a missing (trimmed) one --------------------
+
+
+def test_write_edgelist_a_trailing_empty_string_value_is_written_not_dropped(tmp_path):
+    from plexgraph_core.model.ir import Graph
+
+    # A single connector whose LAST requested attr is present but happens to be "": before the fix this rendered
+    # identically to "attr entirely absent" and was trimmed away, silently shortening the row.
+    g = Graph()
+    a, b = g.add_node("a"), g.add_node("b")
+    g.add_edge(a, b, weight=1.5, color="")
+
+    out = tmp_path / "out.csv"
+    write_edgelist(g, out, delimiter=",", attrs=["weight", "color"])
+    assert open(out).read().splitlines() == ["a,b,1.5,"]  # trailing "," is the present (empty) color, not trimmed
+
+    back = read_edgelist(out, delimiter=",", attrs={"weight": 2, "color": 3})
+    assert back.connector(0).attrs["color"] == ""
+
+    # Contrast: an attr genuinely absent (not just empty) on the LAST row is still trimmed, as before.
+    g2 = Graph()
+    c, d = g2.add_node("c"), g2.add_node("d")
+    g2.add_edge(c, d, weight=2.0)
+    out2 = tmp_path / "out2.csv"
+    write_edgelist(g2, out2, delimiter=",", attrs=["weight", "color"])
+    assert open(out2).read().splitlines() == ["c,d,2.0"]
+
+
+# ---- the default attrs=["weight"] decision, and directedness/export, ignore hyperedges that get skipped ----------
+
+
+def test_write_edgelist_default_attrs_ignores_a_weighted_hyperedge(tmp_path):
+    from plexgraph_core.model.ir import Graph
+
+    g = Graph()
+    for i in range(4):
+        g.add_node(i)
+    g.add_edge(0, 1)  # unweighted
+    g.add_hyperedge([0, 1, 2, 3], weight=5.0)  # the only weighted connector, but it's skipped
+    out = tmp_path / "out.txt"
+    with pytest.warns(UserWarning):
+        write_edgelist(g, out)
+    assert open(out).read().splitlines() == ["0 1"]  # no spurious weight column
+
+
+# ---- a non-numeric weight column is rejected with a clear, located error, not stored as the wrong type -----------
+
+
+def test_read_edgelist_non_numeric_weight_raises_a_clear_error(tmp_path):
+    f = tmp_path / "edges.txt"
+    f.write_text("a b N/A\n")
+    with pytest.raises(ValueError, match=r"edges\.txt:1.*weight must be a number"):
+        read_edgelist(f, attrs={"weight": 2})
+
+
+# ---- node_key text coercion: a crash on multiple leading minus signs, and the true (asymmetric) int64 range ------
+
+
+def test_read_edgelist_a_double_leading_minus_stays_text_instead_of_crashing(tmp_path):
+    f = tmp_path / "edges.txt"
+    f.write_text("a --5\n")
+    g = read_edgelist(f)
+    assert g.node("--5") is not None  # did not raise, and stayed text rather than being misparsed
+
+
+def test_read_edgelist_the_true_int64_minimum_becomes_an_int(tmp_path):
+    f = tmp_path / "edges.txt"
+    f.write_text(f"a {-(2**63)}\n")
+    g = read_edgelist(f)
+    assert g.node(-(2**63)) is not None

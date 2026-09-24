@@ -80,11 +80,15 @@ def read_pandas_node_attributes(
     key: str = "id",
     *,
     attrs: str | Sequence[str] | bool | None = True,
+    int_nodes: bool = True,
     create_missing: bool = True,
 ) -> Graph:
     """The DataFrame equivalent of `read_node_attributes`: one row per node, a `key` column identifying it.
     `attrs` selects which other columns become node attributes -- a column name, a list, True (every remaining
-    column, the default) or None/False for none. Returns `graph`, mutated in place and also returned."""
+    column, the default) or None/False for none. A text `key` column matches `read_node_attributes`'/`read_edgelist`'s
+    own `int_nodes` coercion (so, e.g., a plain-integer id read as text still matches an int-keyed node built by
+    `read_edgelist`); a `key` column that pandas already parsed as a number is used as-is either way. Returns
+    `graph`, mutated in place and also returned."""
     if attrs is True:
         attr_columns = [c for c in df.columns if c != key]
     elif attrs is None or attrs is False:
@@ -98,6 +102,8 @@ def read_pandas_node_attributes(
     for row in df.itertuples(index=False):
         row_dict = row._asdict()
         node = row_dict[key]
+        if int_nodes and isinstance(node, str):
+            node = node_key(node, int_nodes)
         values = {c: row_dict[c] for c in attr_columns}
         if node not in existing:
             if not create_missing:

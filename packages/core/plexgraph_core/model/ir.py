@@ -293,6 +293,13 @@ class Graph:
         te = POS_INF if t_end is None else t_end
         if ts > te:
             raise ValueError(f"t_start ({ts}) must be <= t_end ({te})")
+        # Guard here, once, for every caller (add_edge/add_hyperedge, and every loader built on them): weight is
+        # stored in a column later read back as a float64 numpy array (connector_arrays(), the wire protocol), so a
+        # non-numeric weight -- e.g. a malformed "weight" column read as text and left as a string because it
+        # didn't parse as a number -- would otherwise be accepted here and only fail later, far from the bad input,
+        # with a confusing numpy error instead of a clear one.
+        if weight is not None and (isinstance(weight, bool) or not isinstance(weight, (int, float))):
+            raise TypeError(f"weight must be a number or None, got {weight!r}")
 
         connector_id = len(self._connector_endpoints)
         self._connector_endpoints.append(endpoints)
@@ -300,7 +307,7 @@ class Graph:
         self._connector_layer_id.append(layer_id)
         self._connector_t_start.append(ts)
         self._connector_t_end.append(te)
-        self._connector_weight.append(float("nan") if weight is None else weight)
+        self._connector_weight.append(float("nan") if weight is None else float(weight))
         self._connector_roles.append(roles)
         self._connector_attrs.append(dict(attrs))
         return connector_id

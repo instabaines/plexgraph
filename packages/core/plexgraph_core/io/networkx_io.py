@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from plexgraph_core.io._text import ensure_node, warn_skipped_hyperedges
 from plexgraph_core.model.ir import Graph
 
 
@@ -80,33 +81,34 @@ def to_networkx(graph: Graph, *, multigraph: bool = True) -> Any:
     except ImportError as e:
         raise ImportError("to_networkx() requires networkx to be installed: pip install networkx") from e
 
-    directed = any(c.directed for c in graph.connectors())
+    connectors = graph.connectors()
+    simple = [c for c in connectors if not c.is_hyperedge]  # a skipped hyperedge shouldn't decide directedness either
+    directed = any(c.directed for c in simple)
     cls = (nx.MultiDiGraph if directed else nx.MultiGraph) if multigraph else (nx.DiGraph if directed else nx.Graph)
     out = cls()
-    for n in graph.nodes():
+    nodes = graph.nodes()
+    for n in nodes:
         out.add_node(n.key, **n.attrs)
 
-    skipped = 0
-    for c in graph.connectors():
-        if c.is_hyperedge:
-            skipped += 1
-            continue
-        u, v = graph.node(c.endpoints[0]).key, graph.node(c.endpoints[1]).key
+    # Index directly by internal node/layer id rather than graph.node(id)/graph.layer(id) -- see to_pandas_edgelist
+    # in edgelist.py for why (a node/layer given an explicit integer key equal to another's internal id would
+    # otherwise resolve to the wrong one).
+    node_keys = [n.key for n in nodes]
+    layer_keys = [l.key for l in graph.layers()]
+
+    for c in simple:
+        u, v = node_keys[c.endpoints[0]], node_keys[c.endpoints[1]]
         attrs = dict(c.attrs)
         if c.weight is not None:
             attrs["weight"] = c.weight
         if c.layer_id is not None:
-            attrs["layer"] = graph.layer(c.layer_id).key
+            attrs["layer"] = layer_keys[c.layer_id]
         if not c.is_always_present:
             attrs["t_start"], attrs["t_end"] = c.t_start, c.t_end
         out.add_edge(u, v, **attrs)
         if directed and not c.directed:
             out.add_edge(v, u, **attrs)
-    if skipped:
-        import warnings
-
-        warnings.warn(f"to_networkx: skipped {skipped} hyperedge(s) (more than 2 endpoints); "
-                      "networkx has no hypergraph representation", UserWarning, stacklevel=2)
+    warn_skipped_hyperedges("to_networkx", len(connectors) - len(simple), "networkx has no hypergraph representation")
     return out
 
 
