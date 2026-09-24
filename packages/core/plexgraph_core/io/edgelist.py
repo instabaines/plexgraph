@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Hashable, Iterable, Mapping, Sequence
 
-from plexgraph_core.io._text import attr_value, node_key, read_rows
+from plexgraph_core.io._text import attr_value, ensure_node, node_key, read_rows, warn_skipped_hyperedges
 from plexgraph_core.model.ir import Graph
 
 
@@ -32,21 +32,16 @@ def from_edgelist(
     g = Graph()
     known: set[Hashable] = set()
 
-    def ensure_node(key: Hashable) -> None:
-        if key not in known:
-            g.add_node(key)
-            known.add(key)
-
     for edge in edges:
         if len(edge) == 2:
             u, v = edge
-            ensure_node(u)
-            ensure_node(v)
+            ensure_node(g, known, u)
+            ensure_node(g, known, v)
             g.add_edge(u, v, directed=directed)
         elif len(edge) == 3:
             u, v, extra = edge
-            ensure_node(u)
-            ensure_node(v)
+            ensure_node(g, known, u)
+            ensure_node(g, known, v)
             if isinstance(extra, dict):
                 g.add_edge(u, v, directed=directed, **extra)
             else:
@@ -83,17 +78,12 @@ def from_pandas_edgelist(
     g = Graph()
     known: set[Hashable] = set()
 
-    def ensure_node(key: Hashable) -> None:
-        if key not in known:
-            g.add_node(key)
-            known.add(key)
-
     for row in df.itertuples(index=False):
         row_dict = row._asdict()
         u = row_dict[source]
         v = row_dict[target]
-        ensure_node(u)
-        ensure_node(v)
+        ensure_node(g, known, u)
+        ensure_node(g, known, v)
         attrs = {c: row_dict[c] for c in attr_columns}
         weight = attrs.pop("weight", None)
         g.add_edge(u, v, directed=directed, weight=weight, **attrs)
@@ -133,19 +123,14 @@ def read_edgelist(
     known: set[Hashable] = set()
     attr_columns = dict(attrs or {})
 
-    def ensure_node(key: Hashable) -> None:
-        if key not in known:
-            g.add_node(key)
-            known.add(key)
-
     for parts, number in read_rows(path, delimiter=delimiter, comments=comments, header=header):
         try:
             u_text, v_text = (parts[i] for i in columns)
         except IndexError:
             raise ValueError(f"{path}:{number}: expected at least {max(columns) + 1} columns, got {len(parts)}") from None
         u, v = node_key(u_text, int_nodes), node_key(v_text, int_nodes)
-        ensure_node(u)
-        ensure_node(v)
+        ensure_node(g, known, u)
+        ensure_node(g, known, v)
         extra: dict[str, Any] = {}
         if attr_columns:
             try:
@@ -153,7 +138,10 @@ def read_edgelist(
             except IndexError:
                 raise ValueError(f"{path}:{number}: expected at least {max(attr_columns.values()) + 1} columns, got {len(parts)}") from None
         weight = extra.pop("weight", None)
-        g.add_edge(u, v, directed=directed, weight=weight, **extra)
+        try:
+            g.add_edge(u, v, directed=directed, weight=weight, **extra)
+        except TypeError as exc:
+            raise ValueError(f"{path}:{number}: {exc}") from None
 
     return g
 
@@ -188,29 +176,35 @@ def to_pandas_edgelist(
     def keep(name: str) -> bool:
         return wanted is None or name in wanted
 
+    # Index directly by internal node/layer id rather than graph.node(id)/graph.layer(id): those resolve an
+    # explicit key first and only fall back to treating an int as a raw internal id if no node/layer has that key
+    # (see Graph._resolve_node) -- endpoints/layer_id here always ARE raw internal ids, but a node or layer that
+    # was given an explicit integer key equal to some other node/layer's internal id would otherwise resolve to
+    # the wrong one. graph.nodes()/layers() are built in internal-id order, so a plain list index is both correct
+    # and O(1) per lookup (graph.node(id) is not, and would also be a second O(n) rebuild for every connector).
+    node_keys = [n.key for n in graph.nodes()]
+    layer_keys = [l.key for l in graph.layers()]
+
     rows: list[dict[str, Any]] = []
-    skipped = 0
-    for c in graph.connectors():
-        if c.is_hyperedge:
-            skipped += 1
-            continue
+    connectors = graph.connectors()
+    simple = [c for c in connectors if not c.is_hyperedge]
+    for c in simple:
         u, v = c.endpoints
-        row: dict[str, Any] = {source: graph.node(u).key, target: graph.node(v).key}
+        row: dict[str, Any] = {source: node_keys[u], target: node_keys[v]}
         if c.weight is not None and keep("weight"):
             row["weight"] = c.weight
         if c.layer_id is not None and keep("layer"):
-            row["layer"] = graph.layer(c.layer_id).key
-        if not c.is_always_present and keep("t_start"):
-            row["t_start"], row["t_end"] = c.t_start, c.t_end
+            row["layer"] = layer_keys[c.layer_id]
+        if not c.is_always_present:
+            if keep("t_start"):
+                row["t_start"] = c.t_start
+            if keep("t_end"):
+                row["t_end"] = c.t_end
         for name, value in c.attrs.items():
             if keep(name):
                 row[name] = value
         rows.append(row)
-    if skipped:
-        import warnings
-
-        warnings.warn(f"to_pandas_edgelist: skipped {skipped} hyperedge(s) (more than 2 endpoints); "
-                      "an edge list has no way to represent them", UserWarning, stacklevel=2)
+    warn_skipped_hyperedges("to_pandas_edgelist", len(connectors) - len(simple), "an edge list has no way to represent them")
     return pd.DataFrame(rows, columns=[source, target] if not rows else None)
 
 
@@ -230,28 +224,31 @@ def write_edgelist(
     line naming the columns. Hyperedges are skipped, with a warning naming how many -- an edge list has no way to
     represent them.
     """
-    if attrs is None:
-        attrs = ["weight"] if any(c.weight is not None for c in graph.connectors()) else []
+    connectors = graph.connectors()
+    simple = [c for c in connectors if not c.is_hyperedge]  # weight default and export both ignore skipped hyperedges
 
-    skipped = 0
+    if attrs is None:
+        attrs = ["weight"] if any(c.weight is not None for c in simple) else []
+
+    node_keys = [n.key for n in graph.nodes()]  # see to_pandas_edgelist for why not graph.node(id)
+    _MISSING = object()
+
     with open(path, "w", encoding="utf-8") as fh:
         if header:
             fh.write(delimiter.join(["source", "target", *attrs]) + "\n")
-        for c in graph.connectors():
-            if c.is_hyperedge:
-                skipped += 1
-                continue
+        for c in simple:
             u, v = c.endpoints
             values = {**c.attrs}
             if c.weight is not None:
                 values["weight"] = c.weight
-            fields = [str(graph.node(u).key), str(graph.node(v).key)]
-            fields += ["" if name not in values else str(values[name]) for name in attrs]
-            while fields and fields[-1] == "":  # a trailing missing attribute needs no placeholder
-                fields.pop()
+            fields = [str(node_keys[u]), str(node_keys[v])]
+            # Trim only attrs that are genuinely absent, trailing -- not one whose value happens to BE "" (that is
+            # a real, present value, not a placeholder, and must still be written so the row stays the right width;
+            # comparing rendered "" values, as before, could not tell the two apart and silently dropped the
+            # latter, misaligning that row's columns against every other row, including on read-back).
+            raw = [values[name] if name in values else _MISSING for name in attrs]
+            while raw and raw[-1] is _MISSING:
+                raw.pop()
+            fields += ["" if value is _MISSING else str(value) for value in raw]
             fh.write(delimiter.join(fields) + "\n")
-    if skipped:
-        import warnings
-
-        warnings.warn(f"write_edgelist: skipped {skipped} hyperedge(s) (more than 2 endpoints); "
-                      "an edge list has no way to represent them", UserWarning, stacklevel=2)
+    warn_skipped_hyperedges("write_edgelist", len(connectors) - len(simple), "an edge list has no way to represent them")

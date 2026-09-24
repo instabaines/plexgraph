@@ -30,7 +30,7 @@ from typing import Any, Hashable, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from plexgraph_core.io._text import attr_value, node_key, read_rows
+from plexgraph_core.io._text import attr_value, ensure_node, node_key, read_rows
 from plexgraph_core.model.ir import Graph
 
 # Seconds per unit of each declared numeric epoch.
@@ -143,10 +143,8 @@ def from_temporal_edgelist(
         end = clock.seconds(event[3], where) if intervals else start + (duration or 0.0)
         if end < start:
             raise ValueError(f"{where}: end ({end}) is before start ({start})")
-        for key in (u, v):
-            if key not in known:
-                g.add_node(key)
-                known.add(key)
+        ensure_node(g, known, u)
+        ensure_node(g, known, v)
         g.add_edge(u, v, directed=directed, t_start=start, t_end=end, **attrs)
     clock.finish(g)
     return g

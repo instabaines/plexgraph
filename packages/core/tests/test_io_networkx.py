@@ -134,6 +134,30 @@ def test_to_networkx_skips_hyperedges_with_a_warning():
     assert nxg.number_of_edges() == 1
 
 
+def test_to_networkx_directedness_ignores_a_skipped_hyperedge():
+    # The only directed connector is a hyperedge, which gets skipped -- the resulting (empty) graph must not become
+    # a spurious MultiDiGraph purely because of content that never actually appears in the output.
+    g = Graph()
+    for i in range(4):
+        g.add_node(i)
+    g.add_hyperedge([0, 1, 2, 3], directed=True)
+    with pytest.warns(UserWarning):
+        nxg = to_networkx(g)
+    assert not isinstance(nxg, nx.MultiDiGraph)
+
+
+def test_to_networkx_does_not_confuse_a_node_key_with_another_nodes_internal_id():
+    # b's internal id is 1; c is deliberately given the explicit key 1, colliding with it. The exported edge must
+    # still connect "a" to "b", not to c -- see the identical test in test_io_edgelist.py for the full story.
+    g = Graph()
+    g.add_node("a")
+    g.add_node("b")
+    g.add_node(1)  # key 1 == b's internal id
+    g.add_edge("a", "b")
+    nxg = to_networkx(g)
+    assert set(nxg.edges()) == {("a", "b")}
+
+
 def test_to_networkx_round_trips_through_from_networkx():
     from plexgraph_core.io import from_networkx
 

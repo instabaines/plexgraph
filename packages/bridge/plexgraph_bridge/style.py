@@ -461,7 +461,9 @@ def _edge_style(value: Any) -> Any:
     # "solid"/"-" resolve to None (no dash pattern), but put() treats a bare None as "not given" and skips the
     # key -- that would silently no-op instead of clearing an existing dash, so go through RESET's explicit-null
     # path instead. (RESET means "restore the default", and solid IS the default, so this is exactly right.)
-    return RESET if pattern is None else pattern
+    if pattern is None:
+        return RESET
+    return list(pattern)  # a copy: _DASH_PATTERNS's list is shared by every call and every graph in the process
 
 
 def _curvature(value: Any) -> Any:

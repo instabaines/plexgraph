@@ -200,3 +200,34 @@ def test_pandas_returns_and_mutates_the_same_graph():
     df = pd.DataFrame({"id": ["alice"], "category": ["staff"]})
     g = _edge_graph()
     assert read_pandas_node_attributes(g, df) is g
+
+
+def test_pandas_a_string_id_matches_an_int_keyed_node_like_read_node_attributes_does():
+    # An int-keyed node (as read_edgelist's default int_nodes=True produces) enriched from a DataFrame whose id
+    # column is text (e.g. read with dtype=str) must still match -- not silently create a duplicate node.
+    g = Graph()
+    g.add_node(1)
+    df = pd.DataFrame({"id": ["1"], "category": ["staff"]})
+    read_pandas_node_attributes(g, df)
+    assert g.num_nodes == 1
+    assert g.node(1).attrs == {"category": "staff"}
+
+
+def test_pandas_int_nodes_false_leaves_a_string_id_as_text():
+    g = Graph()
+    g.add_node(1)
+    df = pd.DataFrame({"id": ["1"], "category": ["staff"]})
+    g2 = read_pandas_node_attributes(g, df, int_nodes=False)
+    assert g2.num_nodes == 2  # "1" (text) is a different node from 1 (int)
+    assert g2.node("1").attrs == {"category": "staff"}
+
+
+def test_pandas_an_already_numeric_id_column_is_used_as_is():
+    # pandas hands back a real int/float for a numeric dtype column already -- int_nodes must not re-parse it as
+    # text (which could, in principle, behave differently for a value like a numpy int64).
+    g = Graph()
+    g.add_node(1)
+    df = pd.DataFrame({"id": [1], "category": ["staff"]})  # int64 column, not text
+    read_pandas_node_attributes(g, df)
+    assert g.num_nodes == 1
+    assert g.node(1).attrs == {"category": "staff"}

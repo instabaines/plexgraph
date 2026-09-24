@@ -171,3 +171,32 @@ def test_set_node_attrs_does_not_touch_other_nodes():
     g.add_node("b", category="guest")
     g.set_node_attrs("a", category="staff")
     assert g.node("b").attrs == {"category": "guest"}
+
+
+def test_add_edge_rejects_a_non_numeric_weight():
+    # weight is stored in a column later read back as float64 (connector_arrays(), the wire protocol); a
+    # non-numeric weight must be rejected here, once, rather than silently accepted and only fail later far from
+    # the actual bad input (e.g. a malformed "weight" column read as text by a loader).
+    g = Graph()
+    g.add_node("a")
+    g.add_node("b")
+    with pytest.raises(TypeError, match="weight must be a number"):
+        g.add_edge("a", "b", weight="N/A")
+
+
+def test_add_edge_rejects_a_bool_weight():
+    g = Graph()
+    g.add_node("a")
+    g.add_node("b")
+    with pytest.raises(TypeError, match="weight must be a number"):
+        g.add_edge("a", "b", weight=True)
+
+
+def test_add_edge_accepts_int_and_none_weight():
+    g = Graph()
+    g.add_node("a")
+    g.add_node("b")
+    g.add_edge("a", "b", weight=2)  # an int, not just a float, must be accepted
+    assert g.connector(0).weight == 2.0
+    g.add_edge("a", "b", weight=None)
+    assert g.connector(1).weight is None
