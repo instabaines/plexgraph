@@ -5,7 +5,7 @@ call `show()`, and explore it in a WebGL viewer, inline in Jupyter or in a brows
 with 100,000 nodes and hundreds of thousands of edges.
 
 ```sh
-pip install plexgraph            # everything needed, including the viewer; no Node.js required
+pip install plexgraph
 pip install "plexgraph[jupyter]" # plus the notebook widget (anywidget)
 pip install "plexgraph[all]"     # plus pandas, networkx and the notebook widget
 ```
@@ -45,7 +45,8 @@ Try it without writing code: `python -m plexgraph demo`.
 
 ## Documentation
 
-- [User guide](https://github.com/instabaines/plexgraph/blob/master/docs/user-guide.md)
+**[plexgraph.readthedocs.io](https://plexgraph.readthedocs.io/)** — user guide and API reference. Also:
+
 - [Tour notebook](https://github.com/instabaines/plexgraph/blob/master/examples/notebooks/tour.ipynb) with a runnable
   example of every feature
 - [Changelog](https://github.com/instabaines/plexgraph/blob/master/CHANGELOG.md)
