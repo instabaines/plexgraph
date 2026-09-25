@@ -153,7 +153,8 @@ def _show_widget(graph: Graph, controller: StyleController, viewer_style: dict[s
     view = GraphWidget(graph, controller=controller, layout_iterations=layout_iterations, seed=seed, height=height,
                        viewer_style=viewer_style)
     display(view)
-    handle = ShowHandle(ws_port=None, http_port=None, thread=None, _stop=view.close, widget=view, _style=controller)
+    handle = ShowHandle(ws_port=None, http_port=None, thread=None, _stop=view.close, widget=view, _style=controller,
+                        _hub=view._plexgraph)
     return handle if return_handle else None
 
 
@@ -286,11 +287,46 @@ class ShowHandle:
     widget: Any = field(default=None, repr=False)  # the GraphWidget, when the viewer is a notebook widget
     url: str | None = None  # where the viewer is; None when there is no address to give (no viewer served, or Colab)
     _style: StyleController | None = field(default=None, repr=False)
+    _hub: Any = field(default=None, repr=False)  # the ClientHub (BridgeServer or the widget's), for export/save
 
     def diagnostics(self) -> dict[str, Any]:
         """What the notebook viewer reports about itself (canvas size, WebGL, level of detail, errors); see
         `GraphWidget.diagnostics`. Empty for a viewer that is not a notebook widget."""
         return self.widget.diagnostics if self.widget is not None else {}
+
+    def export(self, format: str = "svg", *, timeout: float = 10.0) -> str | bytes:  # noqa: A002
+        """Get the open viewer's current view: `"svg"` (the default) as text, real vector geometry, the same as the
+        viewer's own Export button; `"png"` as bytes, a raster capture of the canvas. Needs a connected viewer --
+        a browser tab that has loaded, or a notebook widget that has rendered -- and raises RuntimeError if none is
+        connected, or TimeoutError if it doesn't answer within `timeout` seconds. `save()` is usually more
+        convenient if you just want a file.
+
+            svg_text = handle.export()          # or handle.export("svg")
+            png_bytes = handle.export("png")
+        """
+        fmt = format.lower()
+        if fmt not in ("svg", "png"):
+            raise ValueError(f"format must be 'svg' or 'png', got {format!r}")
+        if self._hub is None or self._hub.loop is None:
+            raise RuntimeError("no viewer is connected -- open the viewer (or wait for the notebook widget to "
+                                "render) before exporting")
+        future = asyncio.run_coroutine_threadsafe(self._hub.request_export(fmt, timeout), self._hub.loop)
+        data = future.result(timeout=timeout + 5)  # a little slack past request_export's own internal timeout
+        return data.decode("utf-8") if fmt == "svg" else data
+
+    def save(self, path: str | os.PathLike[str], *, format: str | None = None, timeout: float = 10.0) -> None:  # noqa: A002
+        """Export the open viewer's current view and write it to `path` -- `handle.save("graph.svg")` needs no
+        click, no GUI: just Python. The format is guessed from `path`'s extension (.svg or .png) unless `format` is
+        given. See `export()` for what "current view" means and when this raises."""
+        path = Path(path)
+        fmt = format.lower() if format else path.suffix.lstrip(".").lower()
+        if fmt not in ("svg", "png"):
+            raise ValueError(f"can't tell the format from the extension {path.suffix!r}; pass format=\"svg\" or \"png\"")
+        data = self.export(fmt, timeout=timeout)
+        if isinstance(data, str):
+            path.write_text(data, encoding="utf-8")
+        else:
+            path.write_bytes(data)
 
     @property
     def ws_url(self) -> str:
@@ -527,6 +563,7 @@ def show(
     ready = threading.Event()
     bound_ws_port: list[int] = []
     stop_bridge: list[Callable[[], Any]] = []
+    hub_ref: list[Any] = []  # the BridgeServer (a ClientHub), for ShowHandle.export/.save
 
     def _run_bridge_loop() -> None:
         loop = asyncio.new_event_loop()
@@ -546,6 +583,7 @@ def show(
                 static_dir=app_dir if single_port else None,
                 token=token,
             )
+            hub_ref.append(server)
             port = await server.start()
             controller.bind(server.push_style)
             stop_bridge.append(lambda: loop.call_soon_threadsafe(server.close))
@@ -634,7 +672,7 @@ def show(
         if threading.current_thread() is not bridge_thread:
             bridge_thread.join(timeout=10)
 
-    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop, token=token, url=url, _style=controller)
+    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop, token=token, url=url, _style=controller, _hub=hub_ref[0] if hub_ref else None)
 
     if block:
         try:

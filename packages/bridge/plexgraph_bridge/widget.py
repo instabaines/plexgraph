@@ -224,13 +224,16 @@ class GraphWidget(anywidget.AnyWidget):
             controller.bind(self._plexgraph.push_style)
         self.on_msg(self._on_page_message)
 
-    def _on_page_message(self, _widget: Any, content: Any, _buffers: Any) -> None:
+    def _on_page_message(self, _widget: Any, content: Any, buffers: Any) -> None:
         if not isinstance(content, dict):
             return
         if content.get("type") == "hello":
             self._plexgraph.hello()
         elif content.get("type") == "report":
             self._record_report(content.get("kind"), content.get("data"))
+        elif content.get("type") == "export" and isinstance(content.get("id"), str):
+            data = bytes(buffers[0]) if buffers else None
+            self._plexgraph.resolve_export(content["id"], data, content.get("error"))
 
     def _record_report(self, kind: Any, data: Any) -> None:
         with self._reports_lock:

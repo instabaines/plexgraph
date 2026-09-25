@@ -11,10 +11,12 @@ import asyncio
 import collections
 import logging
 import threading
+import uuid
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 from plexgraph_bridge.session import Session
 from plexgraph_core.model.ir import Graph
+from plexgraph_core.wire.protocol import encode_export_request
 
 if TYPE_CHECKING:
     from plexgraph_bridge.style import StyleController
@@ -102,6 +104,16 @@ class ClientHub:
         self._resync_needed = False
         self.layout_iterations = layout_iterations
         self.seed = seed
+        # Requests to a connected viewer that Python is waiting on a reply to (currently just exports; see
+        # request_export/resolve_export). Keyed by a random id so a reply can be matched to its request even with
+        # several outstanding at once.
+        self._pending_exports: dict[str, asyncio.Future[tuple[bytes | None, str | None]]] = {}
+
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop | None:
+        """The event loop this hub's async work runs on -- None before a viewer has ever been served. For
+        scheduling a coroutine from ordinary (non-async) calling code, e.g. `asyncio.run_coroutine_threadsafe`."""
+        return self._loop
 
     async def serve_client(
         self,
@@ -175,3 +187,49 @@ class ClientHub:
                 return
             self._drain_scheduled = True
         loop.call_soon_threadsafe(self._drain_incoming)
+
+    # -- Requests to the viewer (currently just export) -------------------
+
+    async def request_export(self, fmt: str, timeout: float) -> bytes:
+        """Ask a connected viewer to export its current view as `fmt` ("svg" or "png") and return the raw bytes.
+        Must run on this hub's own event loop (see `loop`) -- the caller-facing, any-thread entry point is
+        `ShowHandle.export`/`.save`, which schedules this with `asyncio.run_coroutine_threadsafe`.
+
+        Raises RuntimeError if no viewer is connected or the viewer itself reports it could not export, and
+        TimeoutError if nothing answers within `timeout` seconds (e.g. an unresponsive/reloading tab)."""
+        client = next(iter(self._clients), None)
+        if client is None:
+            raise RuntimeError("no viewer is connected -- open the viewer (or wait for the notebook widget to "
+                                "render) before exporting")
+        request_id = uuid.uuid4().hex
+        future: asyncio.Future[tuple[bytes | None, str | None]] = asyncio.get_running_loop().create_future()
+        self._pending_exports[request_id] = future
+        try:
+            try:
+                await client.send(encode_export_request(request_id, fmt))
+            except client.closed:
+                raise RuntimeError("the viewer disconnected before it could export") from None
+            try:
+                data, error = await asyncio.wait_for(future, timeout)
+            except asyncio.TimeoutError:
+                raise TimeoutError(f"the viewer did not respond to the export request within {timeout}s") from None
+        finally:
+            self._pending_exports.pop(request_id, None)
+        if error is not None:
+            raise RuntimeError(f"the viewer could not export: {error}")
+        assert data is not None
+        return data
+
+    def resolve_export(self, request_id: str, data: bytes | None, error: str | None) -> None:
+        """A viewer answered an export request (or reported it failed). Safe to call from any thread -- both
+        transports (the WebSocket's incoming-message loop, the widget's comm callback) call this as soon as they
+        have decoded a reply, whichever thread that happens to run on."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+        loop.call_soon_threadsafe(self._resolve_export, request_id, data, error)
+
+    def _resolve_export(self, request_id: str, data: bytes | None, error: str | None) -> None:
+        future = self._pending_exports.get(request_id)
+        if future is not None and not future.done():
+            future.set_result((data, error))

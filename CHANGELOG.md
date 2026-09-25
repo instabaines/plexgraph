@@ -5,6 +5,22 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+### Added
+- **`handle.export()`/`handle.save()`**: get or write the viewer's current view straight from Python, no click, no
+  GUI -- `handle.save("graph.svg")` (format guessed from the extension, or given explicitly; `"svg"` or `"png"`).
+  Needs a connected viewer (a loaded browser tab or a rendered notebook widget); raises `RuntimeError` if none is
+  connected and `TimeoutError` if it doesn't answer within `timeout=` seconds. Works over both viewer transports
+  (the WebSocket bridge and the notebook widget), via a new two-way wire message (`export_request`/
+  `export_response`) -- the first message type a viewer ever sends back to Python; every prior message flowed
+  only from Python to the viewer.
+
+### Fixed
+- The notebook widget's host script (`widget.js`) called anywidget's `model.send(content, buffers)` -- but
+  `AnyModel.send` is `(content, callbacks, buffers)`, three arguments, matching the underlying ipywidgets model;
+  passing buffers as the second argument silently drops them into the callbacks position instead, so they never
+  reach Python. Found while building `handle.export()`'s notebook-widget path, which is the first thing in this
+  codebase to send binary data from the browser back to the kernel; nothing before it would have exposed this.
+
 ## [0.2.0]
 
 ### Added

@@ -4,7 +4,7 @@
 //   PYTHON_PATH=/path/to/venv/bin/python node scripts/verify-widget.mjs      (the venv needs jupyterlab and anywidget)
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import assert from 'node:assert/strict';
@@ -29,6 +29,7 @@ h = pg.show(g, seed=0, layout_iterations=30, node_color=pg.by_attribute('team', 
     cell(`print('PORTS', h.ws_port, h.http_port, h.url, type(h.widget).__name__)
 print('DIAGNOSTICS', json.dumps(h.diagnostics()))`),
     cell(`h.close()`),
+    cell(`h.save(${JSON.stringify(join(dir, 'export.svg'))})`),
   ],
   metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' } }, nbformat: 4, nbformat_minor: 5,
 }));
@@ -60,6 +61,7 @@ try {
     await page.waitForTimeout(2500);
   };
   const runCell = () => page.evaluate(() => window.jupyterapp.commands.execute('notebook:run-cell-and-select-next'));
+  const run = i => page.evaluate(i => { const nb = window.jupyterapp.shell.currentWidget.content; nb.activeCellIndex = i; return window.jupyterapp.commands.execute('notebook:run-cell'); }, i);
   const viewerFrame = async () => {
     for (let i = 0; i < 240; i++) {
       // the widget's iframe is the one frame that holds the viewer (its address is not one Playwright reports consistently)
@@ -130,6 +132,22 @@ try {
   assert.equal(reported.host.hostError, null);
   console.log('ok: the viewer reports its state to the kernel');
 
+  // 3.5. handle.save() writes the viewer's current view straight to a file, entirely from Python -- no click, no
+  // GUI. Cell 4 (appended after h.close(), but run here by explicit index so file order doesn't matter) still
+  // holds the same open, live h from cell 0. This is the postMessage/comm relay path (widget.js/widget.py); the
+  // WebSocket path (scripts/verify-export.mjs) exercises the same request/response wire messages more thoroughly.
+  const exportPath = join(dir, 'export.svg');
+  await run(4);
+  await page.waitForTimeout(1000);
+  if (!existsSync(exportPath)) {
+    const outputs = (await page.locator('.jp-OutputArea').allTextContents()).map(t => t.slice(0, 1500));
+    throw new Error('save() did not write the file. Cell outputs: ' + JSON.stringify(outputs));
+  }
+  const exported = readFileSync(exportPath, 'utf8');
+  assert.ok(exported.startsWith('<svg') && (exported.match(/<circle /g) || []).length === 60,
+    `a real SVG export of all 60 nodes, via the widget (got ${exported.slice(0, 200)})`);
+  console.log('ok: handle.save() works through the notebook widget too');
+
   // 4. Reloading the page brings the viewer back. The kernel is still running with the graph and its style, so the
   // widget only has to ask it to stream again. (The notebook is saved first: JupyterLab redraws outputs from the file.)
   await page.evaluate(() => window.jupyterapp.commands.execute('docmanager:save'));
@@ -152,7 +170,6 @@ try {
   // 6. If the embedded viewer never starts (blocked script, no WebGL, anything), the widget must still say so in the
   // cell and to Python, instead of a silent blank frame that gives nobody anything to act on.
   await open();
-  const run = i => page.evaluate(i => { const nb = window.jupyterapp.shell.currentWidget.content; nb.activeCellIndex = i; return window.jupyterapp.commands.execute('notebook:run-cell'); }, i);
   // Deterministic stand-in for "the embedded viewer's script never runs" (a blocking CSP, no usable WebGL, ...): every
   // srcdoc assignment on an iframe from here on is silently dropped, so the widget's own hello/timeout race is not
   // needed to test this.

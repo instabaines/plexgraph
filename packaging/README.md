@@ -42,6 +42,7 @@ Try it without writing code: `python -m plexgraph demo`.
   the viewer's Appearance panel.
 - **Exploration tools**: search, filters, click-to-select, shortest path, time slider and time ribbon, and export to
   PNG, JPG, SVG, HTML or PDF.
+- **`handle.save("graph.svg")`**: write the viewer's current view straight to a file from Python -- no click needed.
 
 ## Documentation
 

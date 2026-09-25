@@ -2,9 +2,9 @@
 browser tab that connects gets its own Session (so reconnecting re-streams
 the current graph + a fresh layout run).
 
-Phase A does not yet handle incoming control-plane messages from the
-frontend (hover/selection events) — the message loop after the initial
-stream is a placeholder for that, per docs/architecture/plan.md section 3.
+Incoming messages from a tab are currently just export replies (ShowHandle.export/.save; see ClientHub.
+request_export) -- hover/selection events flowing frontend -> Python (docs/architecture/plan.md section 3) are not
+implemented yet.
 
 Python can change the viewer's style while it is open (`push_style`): the change goes to every connected tab, and a
 tab that connects later is brought up to date right after it receives the graph.
@@ -27,6 +27,7 @@ from websockets.http11 import Request, Response
 
 from plexgraph_bridge.hub import ClientHub
 from plexgraph_core.model.ir import Graph
+from plexgraph_core.wire.protocol import decode
 
 if TYPE_CHECKING:
     from plexgraph_bridge.style import StyleController
@@ -85,12 +86,21 @@ class BridgeServer(ClientHub):
 
     async def _handle_connection(self, websocket: ServerConnection) -> None:
         async def until_gone() -> None:
-            # Placeholder message loop for future control-plane traffic (hover/selection events flowing
-            # frontend -> Python).
-            async for _message in websocket:
-                pass
+            async for message in websocket:
+                self._handle_incoming(message)
 
         await self.serve_client(websocket.send, until_gone, closed=(websockets.ConnectionClosed,))
+
+    def _handle_incoming(self, message: str | bytes) -> None:
+        if not isinstance(message, bytes):
+            return  # the protocol is binary-only; a text frame is not one of ours
+        try:
+            payload = decode(message)
+        except Exception:
+            logger.warning("could not decode a message from a viewer", exc_info=True)
+            return
+        if payload.get("type") == "export_response" and isinstance(payload.get("id"), str):
+            self.resolve_export(payload["id"], payload.get("data"), payload.get("error"))
 
     async def start(self) -> int:
         """Start listening and return the bound port."""

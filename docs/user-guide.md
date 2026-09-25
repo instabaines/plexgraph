@@ -324,6 +324,21 @@ Click **Export ▾** (top-left) for:
 | HTML | That same SVG wrapped in a standalone page |
 | PDF | A single-page PDF embedding a JPEG raster (a true vector PDF is a possible future upgrade, not done yet) |
 
+**From Python**, without touching the button: `handle.save("graph.svg")` writes the current view straight to a
+file — the format is guessed from the extension (`.svg` or `.png`), or pass `format=` explicitly. `handle.export()`
+returns the data instead of writing it (a string for SVG, bytes for PNG), if you want to do something else with it:
+
+```python
+handle = pg.show(g, return_handle=True)
+handle.save("graph.svg")             # or "graph.png"
+svg_text = handle.export("svg")      # same thing, returned instead of written
+```
+
+Both need a connected viewer — a browser tab that has loaded, or a notebook widget that has rendered — and ask it
+for its *current* view, so they reflect any live style changes and however the layout has settled so far. They
+raise `RuntimeError` if nothing is connected yet, and `TimeoutError` if the viewer doesn't answer within
+`timeout=` seconds (10 by default). JPG, HTML and PDF (the button's other formats) aren't available from Python yet.
+
 ## Reading graphs from other sources
 
 ```python

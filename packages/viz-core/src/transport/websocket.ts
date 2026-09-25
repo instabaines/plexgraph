@@ -3,7 +3,7 @@
 // standalone browser app, and (later) an anywidget comm-channel client for
 // Jupyter — both decoding the same wire protocol.
 
-import { decode } from "@msgpack/msgpack";
+import { decode, encode } from "@msgpack/msgpack";
 import type { WireMessage } from "../ir/types";
 
 export interface TransportHandlers {
@@ -28,6 +28,12 @@ export class WebSocketTransport {
       const msg = decode(bytes) as WireMessage;
       handlers.onMessage(msg);
     });
+  }
+
+  /** Answer an ExportRequestMessage: `data` is null (with `error` set) when the export itself failed. The
+   * WebSocket carries this the same way every other message travels — one msgpack-encoded binary frame. */
+  sendExport(id: string, format: string, data: Uint8Array | null, error: string | null): void {
+    this.socket.send(encode({ type: "export_response", id, format, data, error }));
   }
 
   close(): void {

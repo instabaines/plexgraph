@@ -153,6 +153,71 @@ async def test_with_a_token_a_client_that_lacks_it_is_refused(query):
         await server.wait_closed()
 
 
+async def _next_export_request(ws) -> dict:
+    """Read messages until the export_request arrives -- it races the layout stream already in progress, so it is
+    not necessarily the very next message."""
+    while True:
+        message = msgpack.unpackb(await ws.recv(), raw=False)
+        if message["type"] == "export_request":
+            return message
+
+
+@pytest.mark.asyncio
+async def test_request_export_round_trips_over_a_real_websocket():
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            request_task = asyncio.create_task(server.request_export("svg", timeout=5))
+            request = await _next_export_request(ws)
+            assert request["format"] == "svg" and request["id"]
+            await ws.send(msgpack.packb(
+                {"type": "export_response", "id": request["id"], "format": "svg", "data": b"<svg>ok</svg>", "error": None},
+                use_bin_type=True,
+            ))
+            assert await request_task == b"<svg>ok</svg>"
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_request_export_raises_the_viewers_reported_error_over_a_real_websocket():
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            request_task = asyncio.create_task(server.request_export("png", timeout=5))
+            request = await _next_export_request(ws)
+            await ws.send(msgpack.packb(
+                {"type": "export_response", "id": request["id"], "format": "png", "data": None, "error": "no canvas"},
+                use_bin_type=True,
+            ))
+            with pytest.raises(RuntimeError, match="no canvas"):
+                await request_task
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_a_garbled_or_unrelated_incoming_message_does_not_take_the_server_down(caplog):
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()  # the graph
+            await ws.send(b"\xc1")  # never valid msgpack
+            await ws.send(msgpack.packb({"type": "hello"}, use_bin_type=True))  # decodable, but not ours to handle
+            await ws.send("a text frame, not binary")
+            # The connection, and the server, must both still be usable afterwards.
+            await ws.send(msgpack.packb({"type": "export_response", "id": "no-such-request", "data": b"x", "error": None}, use_bin_type=True))
+            await asyncio.sleep(0.1)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
 @pytest.mark.asyncio
 async def test_with_a_token_the_right_one_gets_the_graph_from_any_origin(viewer_dir):
     # the token, not the origin, is what admits a viewer: a notebook proxy may present any origin
