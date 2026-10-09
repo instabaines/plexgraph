@@ -30,7 +30,7 @@ from typing import Any, Hashable, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from plexgraph_core.io._text import attr_value, ensure_node, node_key, read_rows
+from plexgraph_core.io._text import attr_value, ensure_node, node_key, read_rows, select_columns
 from plexgraph_core.model.ir import Graph
 
 # Seconds per unit of each declared numeric epoch.
@@ -170,15 +170,8 @@ def from_pandas_temporal_edgelist(
     `edge_attr` selects extra columns to keep as connector attributes (a name, a list, or True for all
     remaining columns).
     """
-    reserved = {source, target, time} | ({end} if end else set())
-    if edge_attr is True:
-        keep = [c for c in df.columns if c not in reserved]
-    elif edge_attr is None or edge_attr is False:
-        keep = []
-    elif isinstance(edge_attr, str):
-        keep = [edge_attr]
-    else:
-        keep = list(edge_attr)
+    reserved = [source, target, time, *([end] if end else [])]
+    keep = select_columns(edge_attr, df.columns, exclude=reserved)
     missing = [c for c in [source, target, time, *([end] if end else []), *keep] if c not in df.columns]
     if missing:
         raise KeyError(f"columns not found in the DataFrame: {missing}")

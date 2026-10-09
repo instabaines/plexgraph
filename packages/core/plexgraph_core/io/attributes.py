@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Hashable, Mapping, Sequence
 
-from plexgraph_core.io._text import attr_value, node_key, read_header, read_rows
+from plexgraph_core.io._text import attr_value, node_key, read_rows, select_columns
 from plexgraph_core.model.ir import Graph
 
 
@@ -41,17 +41,22 @@ def read_node_attributes(
     set_node_attributes`, which requires the node to already exist. Returns `graph`, mutated in place and also
     returned, so this composes into one expression.
     """
+    # One pass over the file, not two: read_rows(..., header=False) never auto-skips, so the header line (when
+    # there is one) is consumed right here, as the first row, instead of a separate read_header() call opening
+    # and re-scanning the file from the start just to name columns before the real pass begins.
+    rows = read_rows(path, delimiter=delimiter, comments=comments, header=False)
+    header_fields = next(rows, (None, None))[0] if header else None
+
     if attrs is None:
-        fields = read_header(path, delimiter=delimiter, comments=comments) if header else None
-        if fields is None:
+        if header_fields is None:
             attrs = {}
-        elif key_column >= len(fields):
-            raise ValueError(f"{path}: key_column {key_column} is out of range for a {len(fields)}-column header {fields!r}")
+        elif key_column >= len(header_fields):
+            raise ValueError(f"{path}: key_column {key_column} is out of range for a {len(header_fields)}-column header {header_fields!r}")
         else:
-            attrs = {name: i for i, name in enumerate(fields) if i != key_column}
+            attrs = {name: i for i, name in enumerate(header_fields) if i != key_column}
 
     existing = _node_keys(graph)
-    for parts, number in read_rows(path, delimiter=delimiter, comments=comments, header=header):
+    for parts, number in rows:
         try:
             key = node_key(parts[key_column], int_nodes)
         except IndexError:
@@ -89,14 +94,7 @@ def read_pandas_node_attributes(
     own `int_nodes` coercion (so, e.g., a plain-integer id read as text still matches an int-keyed node built by
     `read_edgelist`); a `key` column that pandas already parsed as a number is used as-is either way. Returns
     `graph`, mutated in place and also returned."""
-    if attrs is True:
-        attr_columns = [c for c in df.columns if c != key]
-    elif attrs is None or attrs is False:
-        attr_columns = []
-    elif isinstance(attrs, str):
-        attr_columns = [attrs]
-    else:
-        attr_columns = list(attrs)
+    attr_columns = select_columns(attrs, df.columns, exclude=[key])
 
     existing = _node_keys(graph)
     for row in df.itertuples(index=False):
