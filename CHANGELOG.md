@@ -5,6 +5,41 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+### Added
+- **`handle.export_async()`/`handle.save_async()`**: `await`-based equivalents of `export()`/`save()` (added in
+  0.3.0), for use directly in a notebook cell (Jupyter supports top-level `await`). Recommended over the plain
+  `export()`/`save()` for the notebook widget specifically -- see "Fixed" below for why.
+
+### Fixed
+- `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
+  correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
+  own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's
+  own message handling, which sometimes runs on the exact thread the call is blocking -- confirmed directly, by
+  instrumenting a real run and tracing where the reply actually got processed (immediately after the blocking
+  wait gave up and freed that thread, not before). `export_async()`/`save_async()` do not have this problem:
+  `await` is a genuine cooperative yield, so it cannot starve the kernel's own message handling the way a thread
+  block can. The plain `export()`/`save()` remain unchanged (still correct for a browser tab, and still usable
+  against the widget -- just not guaranteed to succeed within their timeout); their docstrings and the user guide
+  now say so.
+
+## [0.3.0]
+
+### Added
+- **`handle.export()`/`handle.save()`**: get or write the viewer's current view straight from Python, no click, no
+  GUI -- `handle.save("graph.svg")` (format guessed from the extension, or given explicitly; `"svg"` or `"png"`).
+  Needs a connected viewer (a loaded browser tab or a rendered notebook widget); raises `RuntimeError` if none is
+  connected and `TimeoutError` if it doesn't answer within `timeout=` seconds. Works over both viewer transports
+  (the WebSocket bridge and the notebook widget), via a new two-way wire message (`export_request`/
+  `export_response`) -- the first message type a viewer ever sends back to Python; every prior message flowed
+  only from Python to the viewer.
+
+### Fixed
+- The notebook widget's host script (`widget.js`) called anywidget's `model.send(content, buffers)` -- but
+  `AnyModel.send` is `(content, callbacks, buffers)`, three arguments, matching the underlying ipywidgets model;
+  passing buffers as the second argument silently drops them into the callbacks position instead, so they never
+  reach Python. Found while building `handle.export()`'s notebook-widget path, which is the first thing in this
+  codebase to send binary data from the browser back to the kernel; nothing before it would have exposed this.
+
 ## [0.2.0]
 
 ### Added
@@ -175,7 +210,8 @@ First release, as a single installable package: `pip install plexgraph`.
 - Hovering picked the first node drawn where nodes overlap instead of the one on top.
 - Zooming into a large graph while its layout was still streaming stayed stuck in the overview.
 
-[Unreleased]: https://github.com/instabaines/plexgraph/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/instabaines/plexgraph/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/instabaines/plexgraph/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/instabaines/plexgraph/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/instabaines/plexgraph/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/instabaines/plexgraph/releases/tag/v0.1.0

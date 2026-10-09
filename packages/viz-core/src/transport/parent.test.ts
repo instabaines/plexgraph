@@ -61,4 +61,20 @@ describe("ParentTransport", () => {
     transport.close();
     expect(isListening()).toBe(false);
   });
+
+  it("posts an export result as a distinct message, transferring the buffer", () => {
+    const { transport, posted } = setup();
+    const data = new Uint8Array([1, 2, 3]);
+    transport.sendExport("req-1", "png", data, null);
+    expect(posted).toHaveLength(2); // the initial "hello", then this
+    const [message] = posted[1] as [Record<string, unknown>, string];
+    expect(message).toEqual({ plexgraph: "export", id: "req-1", format: "png", error: null, data: data.buffer });
+  });
+
+  it("posts a failed export with no data", () => {
+    const { transport, posted } = setup();
+    transport.sendExport("req-2", "svg", null, "boom");
+    const [message] = posted[1] as [Record<string, unknown>, string];
+    expect(message).toEqual({ plexgraph: "export", id: "req-2", format: "svg", error: "boom", data: null });
+  });
 });

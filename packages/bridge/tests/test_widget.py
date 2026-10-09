@@ -147,6 +147,139 @@ def test_nothing_is_sent_until_the_viewer_says_hello(make_widget):
     assert page.raw == []
 
 
+# ---- export
+
+
+def _export_request(page: Page) -> dict:
+    frames = page.wait_for(lambda fs: fs if any(f["message"]["type"] == "export_request" for f in fs) else None)
+    return next(f["message"] for f in frames if f["message"]["type"] == "export_request")
+
+
+def test_export_request_round_trips_through_the_widget(make_widget):
+    import asyncio
+
+    page = Page(make_widget(layout_iterations=1))
+    page.hello()
+    hub = page.view._plexgraph
+    assert hub.export_requests_sent == 0
+    future = asyncio.run_coroutine_threadsafe(hub.request_export("svg", 5), hub.loop)
+    request = _export_request(page)
+    assert request["format"] == "svg" and request["id"]
+    assert hub.export_requests_sent == 1
+    page.view._on_page_message(page.view, {"type": "export", "id": request["id"], "format": "svg", "error": None},
+                               [b"<svg>ok</svg>"])
+    assert future.result(timeout=5) == b"<svg>ok</svg>"
+    assert hub.export_responses_relayed == 1 and hub.export_responses_handled == 1
+    assert page.view.diagnostics["kernel"]["exportRequestsSent"] == 1
+    assert page.view.diagnostics["kernel"]["exportResponsesRelayed"] == 1
+    assert page.view.diagnostics["kernel"]["exportResponsesHandled"] == 1
+
+
+def test_export_request_surfaces_the_viewers_reported_error(make_widget):
+    import asyncio
+
+    page = Page(make_widget(layout_iterations=1))
+    page.hello()
+    hub = page.view._plexgraph
+    future = asyncio.run_coroutine_threadsafe(hub.request_export("png", 5), hub.loop)
+    request = _export_request(page)
+    page.view._on_page_message(page.view, {"type": "export", "id": request["id"], "format": "png", "error": "canvas.toBlob returned null"}, [])
+    with pytest.raises(RuntimeError, match="canvas.toBlob returned null"):
+        future.result(timeout=5)
+
+
+def test_export_messages_with_no_or_non_string_id_are_ignored(make_widget):
+    page = Page(make_widget(layout_iterations=1))
+    page.hello()
+    for content in ({"type": "export"}, {"type": "export", "id": 5, "format": "svg", "error": None}):
+        page.view._on_page_message(page.view, content, [b"data"])  # must not raise
+
+
+def test_handle_export_and_save_round_trip_through_the_widget(notebook, tmp_path):
+    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        page = Page(handle.widget)
+        page.hello()
+
+        answer_thread = threading.Thread(target=lambda: _answer_export(page, "<svg>ok</svg>".encode()))
+        answer_thread.start()
+        svg = handle.export("svg", timeout=5)
+        answer_thread.join(timeout=5)
+        assert svg == "<svg>ok</svg>"
+    finally:
+        handle.close()
+
+
+def _answer_export(page: Page, data: bytes) -> None:
+    request = _export_request(page)
+    page.view._on_page_message(page.view, {"type": "export", "id": request["id"], "format": request["format"], "error": None}, [data])
+
+
+def test_handle_save_writes_the_export_to_a_file(notebook, tmp_path):
+    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        page = Page(handle.widget)
+        page.hello()
+        answer_thread = threading.Thread(target=lambda: _answer_export(page, b"\x89PNGfakepixels"))
+        answer_thread.start()
+        out = tmp_path / "graph.png"
+        handle.save(out, timeout=5)
+        answer_thread.join(timeout=5)
+        assert out.read_bytes() == b"\x89PNGfakepixels"
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_handle_export_async_round_trips_through_the_widget(notebook):
+    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        page = Page(handle.widget)
+        page.hello()
+        answer_thread = threading.Thread(target=lambda: _answer_export(page, "<svg>ok</svg>".encode()))
+        answer_thread.start()
+        svg = await handle.export_async("svg", timeout=5)
+        answer_thread.join(timeout=5)
+        assert svg == "<svg>ok</svg>"
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_handle_save_async_writes_the_export_to_a_file(notebook, tmp_path):
+    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        page = Page(handle.widget)
+        page.hello()
+        answer_thread = threading.Thread(target=lambda: _answer_export(page, b"\x89PNGfakepixels"))
+        answer_thread.start()
+        out = tmp_path / "graph.png"
+        await handle.save_async(out, timeout=5)
+        answer_thread.join(timeout=5)
+        assert out.read_bytes() == b"\x89PNGfakepixels"
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_handle_export_async_raises_when_no_viewer_has_connected(notebook):
+    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        with pytest.raises(RuntimeError, match="no viewer is connected"):
+            await handle.export_async("svg", timeout=0.2)  # hello() was never called: nothing is listening
+    finally:
+        handle.close()
+
+
+def test_handle_export_raises_when_no_viewer_has_connected(notebook):
+    handle = launcher.show(_graph(), layout_iterations=1, return_handle=True)
+    try:
+        with pytest.raises(RuntimeError, match="no viewer is connected"):
+            handle.export("svg", timeout=0.2)  # hello() was never called: nothing is listening
+    finally:
+        handle.close()
+
+
 def test_a_frame_bigger_than_a_chunk_is_split_and_reassembles(make_widget, monkeypatch):
     monkeypatch.setattr(widget_module, "CHUNK_BYTES", 200)
     page = Page(make_widget(_graph(60), layout_iterations=2))
@@ -442,7 +575,7 @@ def test_the_hosted_notebook_warning_says_how_to_get_the_widget(monkeypatch):
 
 def test_the_viewers_state_report_is_kept_for_diagnosis(make_widget):
     view = make_widget()
-    assert view.diagnostics == {"state": {}, "errors": [], "host": {}, "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None}}
+    assert view.diagnostics == {"state": {}, "errors": [], "host": {}, "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None, "exportRequestsSent": 0, "exportResponsesRelayed": 0, "exportResponsesHandled": 0}}
     view._on_page_message(view, {"type": "report", "kind": "state", "data": {"canvas": {"pixels": [868, 348]}, "gl": {"lost": False}}}, [])
     view._on_page_message(view, {"type": "report", "kind": "state", "data": {"canvas": {"pixels": [900, 400]}}}, [])
     assert view.diagnostics["state"] == {"canvas": {"pixels": [900, 400]}}  # the latest
@@ -463,7 +596,7 @@ def test_malformed_reports_are_ignored(make_widget):
     for content in ("text", None, {"type": "report"}, {"type": "report", "kind": "state", "data": "x"},
                     {"type": "report", "kind": "error", "data": 5}, {"type": "report", "kind": "other", "data": {}}):
         view._on_page_message(view, content, [])
-    assert view.diagnostics == {"state": {}, "errors": [], "host": {}, "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None}}
+    assert view.diagnostics == {"state": {}, "errors": [], "host": {}, "kernel": {"hellosReceived": 0, "framesSent": 0, "bytesSent": 0, "lastStreamingError": None, "exportRequestsSent": 0, "exportResponsesRelayed": 0, "exportResponsesHandled": 0}}
 
 
 def test_the_handle_exposes_the_diagnostics_and_a_server_viewer_has_none(notebook):

@@ -440,30 +440,30 @@ def _unit(name: str, value: Any) -> Any:
     return float(value)
 
 
-# networkx/matplotlib name -> (dash, gap, dot, gap) in pixels; a dash and a dot share the same on/off shape in the
-# shader, so "dotted" is just a short dash. None (solid) means "no pattern" and is left out of the wire message
-# entirely, so the common case (every edge solid) costs nothing extra to send or to check in the shader.
-_DASH_PATTERNS: dict[str, list[float] | None] = {
-    "solid": None, "-": None,
-    "dashed": [8.0, 5.0, 0.0, 0.0], "--": [8.0, 5.0, 0.0, 0.0],
-    "dotted": [1.5, 4.0, 0.0, 0.0], ":": [1.5, 4.0, 0.0, 0.0],
-    "dashdot": [8.0, 4.0, 1.5, 4.0], "-.": [8.0, 4.0, 1.5, 4.0],
+# Canonical name -> (dash, gap, dot, gap) in pixels; a dash and a dot share the same on/off shape in the shader, so
+# "dotted" is just a short dash. "solid" isn't here -- it means "no pattern", handled directly in _edge_style
+# (through RESET, not a bare None: put() treats a bare None as "not given" and would skip the key, silently
+# no-op'ing instead of clearing an existing dash). matplotlib's shorthand is a separate alias table resolved
+# before the lookup, rather than duplicating every pattern under a second key -- the one thing that needs the
+# names at all (the error message) then has one list to build instead of unweaving the two kinds of key back apart.
+_DASH_PATTERNS: dict[str, list[float]] = {
+    "dashed": [8.0, 5.0, 0.0, 0.0],
+    "dotted": [1.5, 4.0, 0.0, 0.0],
+    "dashdot": [8.0, 4.0, 1.5, 4.0],
 }
+_DASH_ALIASES = {"-": "solid", "--": "dashed", ":": "dotted", "-.": "dashdot"}
 
 
 def _edge_style(value: Any) -> Any:
     if value is None or isinstance(value, _Reset):
         return value
-    if not isinstance(value, str) or value not in _DASH_PATTERNS:
-        raise ValueError(f"edge_style must be one of {sorted(set(_DASH_PATTERNS) - {'-', '--', ':', '-.'})} "
-                         f"(or matplotlib's '-', '--', ':', '-.'), got {value!r}")
-    pattern = _DASH_PATTERNS[value]
-    # "solid"/"-" resolve to None (no dash pattern), but put() treats a bare None as "not given" and skips the
-    # key -- that would silently no-op instead of clearing an existing dash, so go through RESET's explicit-null
-    # path instead. (RESET means "restore the default", and solid IS the default, so this is exactly right.)
-    if pattern is None:
+    name = _DASH_ALIASES.get(value, value) if isinstance(value, str) else value
+    if name == "solid":
         return RESET
-    return list(pattern)  # a copy: _DASH_PATTERNS's list is shared by every call and every graph in the process
+    if not isinstance(name, str) or name not in _DASH_PATTERNS:
+        raise ValueError(f"edge_style must be one of {['solid', *_DASH_PATTERNS]} "
+                         f"(or matplotlib's {list(_DASH_ALIASES)}), got {value!r}")
+    return list(_DASH_PATTERNS[name])  # a copy: _DASH_PATTERNS's list is shared by every call and every graph in the process
 
 
 def _curvature(value: Any) -> Any:

@@ -68,7 +68,16 @@ export interface StyleMessage {
   color?: number[] | null;
 }
 
-export type WireMessage = GraphMessage | LayoutStepMessage | StyleMessage;
+/** Python asking the viewer to export its current view and send the result back — see Transport.sendExport and
+ * plexgraph_bridge.hub.ClientHub.request_export. `id` round-trips into the ExportResponseMessage so Python can
+ * match the reply to the request that asked for it. */
+export interface ExportRequestMessage {
+  type: "export_request";
+  id: string;
+  format: "svg" | "png";
+}
+
+export type WireMessage = GraphMessage | LayoutStepMessage | StyleMessage | ExportRequestMessage;
 
 export function isStyleMessage(msg: WireMessage): msg is StyleMessage {
   return msg.type === "style";
@@ -80,6 +89,10 @@ export function isGraphMessage(msg: WireMessage): msg is GraphMessage {
 
 export function isLayoutStepMessage(msg: WireMessage): msg is LayoutStepMessage {
   return msg.type === "layout_step";
+}
+
+export function isExportRequestMessage(msg: WireMessage): msg is ExportRequestMessage {
+  return msg.type === "export_request";
 }
 
 /** Decode the raw positions buffer into a Float32Array. Copies into a

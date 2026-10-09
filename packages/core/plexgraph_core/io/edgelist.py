@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Hashable, Iterable, Mapping, Sequence
 
-from plexgraph_core.io._text import attr_value, ensure_node, node_key, read_rows, warn_skipped_hyperedges
+from plexgraph_core.io._text import attr_value, ensure_node, node_key, read_rows, select_columns, warn_skipped_hyperedges
 from plexgraph_core.model.ir import Graph
 
 
@@ -66,14 +66,7 @@ def from_pandas_edgelist(
     connector attrs: a column name, a list of column names, True for every
     remaining column, or None (the default) for no extra attrs.
     """
-    if edge_attr is True:
-        attr_columns = [c for c in df.columns if c not in (source, target)]
-    elif edge_attr is None or edge_attr is False:
-        attr_columns = []
-    elif isinstance(edge_attr, str):
-        attr_columns = [edge_attr]
-    else:
-        attr_columns = list(edge_attr)
+    attr_columns = select_columns(edge_attr, df.columns, exclude=[source, target])
 
     g = Graph()
     known: set[Hashable] = set()

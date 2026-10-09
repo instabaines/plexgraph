@@ -116,6 +116,14 @@ export default {
         model.send({ type: "hello" });
       } else if (event.data.plexgraph === "report") {
         model.send({ type: "report", kind: event.data.kind, data: event.data.data });
+      } else if (event.data.plexgraph === "export") {
+        // The viewer answering an export request (ShowHandle.export/.save) -- a distinct message from "frame",
+        // which only ever carries kernel -> viewer traffic.
+        const { id, format, error, data } = event.data;
+        // AnyModel.send is (content, callbacks, buffers) -- 3 args, matching the underlying ipywidgets model's
+        // signature -- not (content, buffers); passing buffers as the 2nd arg silently drops them (they land in
+        // the "callbacks" position instead), so Python never sees the data.
+        model.send({ type: "export", id, format, error: error || null }, {}, data ? [data] : []);
       }
     };
     window.addEventListener("message", onViewer);

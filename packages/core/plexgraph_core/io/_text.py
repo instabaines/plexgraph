@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Any, Hashable, Iterator
+from typing import Any, Hashable, Iterable, Iterator, Sequence
 
 from plexgraph_core.model.ir import Graph
 
@@ -44,6 +44,22 @@ def warn_skipped_hyperedges(caller: str, count: int, reason: str) -> None:
     every exporter to a plain-edge format, none of which can represent a hyperedge."""
     if count:
         warnings.warn(f"{caller}: skipped {count} hyperedge(s) (more than 2 endpoints); {reason}", UserWarning, stacklevel=3)
+
+
+def select_columns(selector: bool | str | Sequence[str] | None, columns: Iterable[str], exclude: Iterable[str] = ()) -> list[str]:
+    """Normalize a pandas `edge_attr=`/`attrs=`-style column selector against an actual DataFrame's `columns`:
+    `True` means every column not in `exclude` (e.g. the source/target/key columns, which are never also an
+    attribute); `None`/`False` means none; a single name means just that column; a list means exactly those,
+    taken as given (not validated against `columns` -- the caller's own row access already raises a clear
+    `KeyError` for a name that doesn't exist). Shared by every pandas-DataFrame loader in this package."""
+    if selector is True:
+        excluded = set(exclude)
+        return [c for c in columns if c not in excluded]
+    if selector is None or selector is False:
+        return []
+    if isinstance(selector, str):
+        return [selector]
+    return list(selector)
 
 
 def attr_value(text: str) -> Any:

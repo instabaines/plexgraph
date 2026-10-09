@@ -188,9 +188,16 @@ class _WidgetBridge(ClientHub):
         listening" message never reached the kernel at all (points at the comm channel itself, before any of our code
         runs); framesSent/bytesSent being 0 despite a hello means streaming did not start or failed immediately
         (lastStreamingError, if any, says why); framesSent growing but the browser reporting no graph points at
-        something between the kernel's model.send() and the browser's postMessage relay."""
+        something between the kernel's model.send() and the browser's postMessage relay. exportRequestsSent is 0 if
+        ShowHandle.export()/.save() never even found a client to ask (see request_export); exportResponsesRelayed
+        growing but exportResponsesHandled not means resolve_export's own loop had already gone (see its loop
+        check) between the request and the reply arriving -- distinct from a reply that never arrives at all
+        (exportResponsesRelayed staying 0), which points at the browser -> kernel relay itself (widget.js/anywidget)."""
         return {"hellosReceived": self._hellos_received, "framesSent": self._frames_sent,
-                "bytesSent": self._bytes_sent, "lastStreamingError": self._last_streaming_error}
+                "bytesSent": self._bytes_sent, "lastStreamingError": self._last_streaming_error,
+                "exportRequestsSent": self.export_requests_sent,
+                "exportResponsesRelayed": self.export_responses_relayed,
+                "exportResponsesHandled": self.export_responses_handled}
 
     def stop(self) -> None:
         self._stopped = True
@@ -224,13 +231,16 @@ class GraphWidget(anywidget.AnyWidget):
             controller.bind(self._plexgraph.push_style)
         self.on_msg(self._on_page_message)
 
-    def _on_page_message(self, _widget: Any, content: Any, _buffers: Any) -> None:
+    def _on_page_message(self, _widget: Any, content: Any, buffers: Any) -> None:
         if not isinstance(content, dict):
             return
         if content.get("type") == "hello":
             self._plexgraph.hello()
         elif content.get("type") == "report":
             self._record_report(content.get("kind"), content.get("data"))
+        elif content.get("type") == "export" and isinstance(content.get("id"), str):
+            data = bytes(buffers[0]) if buffers else None
+            self._plexgraph.resolve_export(content["id"], data, content.get("error"))
 
     def _record_report(self, kind: Any, data: Any) -> None:
         with self._reports_lock:

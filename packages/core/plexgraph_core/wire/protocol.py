@@ -136,3 +136,9 @@ def encode_style(op: str, *, spec: dict[str, Any] | None = None, ids: Any = None
         payload["color"] = None if color is None else [float(c) for c in color]
     return msgpack.packb(payload, use_bin_type=True)
 
+
+def encode_export_request(request_id: str, fmt: str) -> bytes:
+    """Ask the viewer to export its current view and send the result back (see ExportRequestMessage in viz-core,
+    and ClientHub.request_export). `request_id` round-trips into the reply so it can be matched to this request."""
+    return msgpack.packb({"type": "export_request", "id": request_id, "format": fmt}, use_bin_type=True)
+

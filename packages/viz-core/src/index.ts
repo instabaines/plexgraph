@@ -4,8 +4,8 @@ import { Renderer, RendererOptions, StackAxis, TimeFilterOptions, TimeSplit } fr
 import { WebSocketTransport, type TransportHandlers } from "./transport/websocket";
 import { ParentTransport, PARENT_TRANSPORT } from "./transport/parent";
 export { PARENT_TRANSPORT } from "./transport/parent";
-import type { WireNode } from "./ir/types";
-import { isGraphMessage, isLayoutStepMessage, isStyleMessage } from "./ir/types";
+import type { ExportRequestMessage, WireNode } from "./ir/types";
+import { isExportRequestMessage, isGraphMessage, isLayoutStepMessage, isStyleMessage } from "./ir/types";
 import { applyStyleMessage } from "./style/messages";
 import type { AttributeSummary, NodeFilter } from "./interaction/graph-index";
 import type { StyleSpec } from "./style/spec";
@@ -118,6 +118,28 @@ export function mountViewer(
 ): ViewerHandle {
   const renderer = new Renderer(canvas, options);
 
+  // Answers a Python-initiated export request (ShowHandle.export/.save) the same way the "Export ▾" button
+  // does -- svg is exportSVG()'s text, encoded; png is the same canvas.toBlob() capture the button's PNG export
+  // uses (preserveDrawingBuffer is on for exactly this). transport is assigned below, but never called before
+  // then: both transports only invoke onMessage from an event that fires after their constructor returns.
+  const handleExportRequest = (msg: ExportRequestMessage): void => {
+    const respond = (data: Uint8Array | null, error: string | null) => transport.sendExport(msg.id, msg.format, data, error);
+    try {
+      if (msg.format === "svg") {
+        respond(new TextEncoder().encode(renderer.exportSVG()), null);
+      } else if (msg.format === "png") {
+        canvas.toBlob((blob) => {
+          if (!blob) { respond(null, "canvas.toBlob returned null"); return; }
+          blob.arrayBuffer().then((buf) => respond(new Uint8Array(buf), null), (err) => respond(null, String(err)));
+        }, "image/png");
+      } else {
+        respond(null, `unknown export format ${JSON.stringify(msg.format)}`);
+      }
+    } catch (err) {
+      respond(null, err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handlers: TransportHandlers = {
     onMessage: (msg) => {
       if (isGraphMessage(msg)) {
@@ -132,6 +154,8 @@ export function mountViewer(
           console.error("[plexgraph] style rejected:", err);
           options?.onStyleError?.(err);
         }
+      } else if (isExportRequestMessage(msg)) {
+        handleExportRequest(msg);
       }
     },
     onOpen: options?.onOpen,

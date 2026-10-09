@@ -10,7 +10,7 @@ import type { TransportHandlers } from "./websocket";
 export const PARENT_TRANSPORT = "parent";
 
 interface MessageTarget {
-  postMessage(message: unknown, targetOrigin: string): void;
+  postMessage(message: unknown, targetOrigin: string, transfer?: Transferable[]): void;
 }
 
 interface MessageSource {
@@ -46,6 +46,14 @@ export class ParentTransport {
     // after the listener exists, so the first frame cannot arrive before anything is ready to take it.
     host.postMessage({ plexgraph: "hello" }, "*");
     handlers.onOpen?.();
+  }
+
+  /** Answer an ExportRequestMessage: relayed to Python by the widget host script (widget.js), which is listening
+   * for this exact shape, as a "export" custom message with `data` as its binary buffer -- not wrapped as a
+   * generic "frame" (that channel only carries Python -> viewer traffic; see ClientHub.request_export). */
+  sendExport(id: string, format: string, data: Uint8Array | null, error: string | null): void {
+    const buffer = data ? data.buffer as ArrayBuffer : null;
+    this.host.postMessage({ plexgraph: "export", id, format, error, data: buffer }, "*", buffer ? [buffer] : []);
   }
 
   close(): void {
