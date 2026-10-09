@@ -339,6 +339,21 @@ for its *current* view, so they reflect any live style changes and however the l
 raise `RuntimeError` if nothing is connected yet, and `TimeoutError` if the viewer doesn't answer within
 `timeout=` seconds (10 by default). JPG, HTML and PDF (the button's other formats) aren't available from Python yet.
 
+**In a notebook, prefer the `await`-based `export_async()`/`save_async()`** — Jupyter supports `await` directly in
+a cell, no `async def` wrapper needed:
+
+```python
+await handle.save_async("graph.svg")
+svg_text = await handle.export_async("svg")
+```
+
+The plain `save()`/`export()` block the thread they're called from until the viewer replies, which is always safe
+for a browser tab (its own thread), but *not* reliably for the notebook widget: the reply can only be delivered by
+the Jupyter kernel's own message handling, which sometimes runs on that exact same thread the call is blocking —
+in that case `save()`/`export()` wait out the full timeout and raise `TimeoutError`, even though the viewer
+answered correctly. `await` is a genuine yield, so it cannot cause this; `export_async()`/`save_async()` work
+reliably over both routes. See "Known limitations" below.
+
 ## Reading graphs from other sources
 
 ```python
@@ -593,6 +608,11 @@ Worth knowing about rather than discovering by surprise:
   export correctly.
 - **The notebook widget is verified in JupyterLab only.** Other notebook frontends (Colab, VS Code, Notebook 7 and the
   hosted services) should work but are listed above as not verified.
+- **`handle.export()`/`.save()` can time out against the notebook widget even though the viewer answered
+  correctly** — a Jupyter kernel threading quirk, not a plexgraph bug: the reply can only be delivered by the
+  kernel's own message handling, which sometimes runs on the exact thread the call is blocking. Use
+  `export_async()`/`save_async()` (`await`-based) instead; see "Exporting" above. The browser-tab route is not
+  affected — it has no such thread to share.
 
 ### Aligned slice layouts
 

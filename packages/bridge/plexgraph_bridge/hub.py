@@ -108,6 +108,14 @@ class ClientHub:
         # request_export/resolve_export). Keyed by a random id so a reply can be matched to its request even with
         # several outstanding at once.
         self._pending_exports: dict[str, asyncio.Future[tuple[bytes | None, str | None]]] = {}
+        # Diagnostic counters, surfaced via GraphWidget.diagnostics()'s "kernel" section, to tell apart where an
+        # export round trip got stuck: _sent (request_export found a client and sent it), _relayed (a transport
+        # called resolve_export at all -- confirms the reply reached Python's message handling), _handled
+        # (resolve_export's loop was alive and handed off to _resolve_export -- distinguishes a relayed-but-dropped
+        # reply, e.g. the hub's loop already closed, from one never relayed at all).
+        self.export_requests_sent = 0
+        self.export_responses_relayed = 0
+        self.export_responses_handled = 0
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop | None:
@@ -207,6 +215,7 @@ class ClientHub:
         try:
             try:
                 await client.send(encode_export_request(request_id, fmt))
+                self.export_requests_sent += 1
             except client.closed:
                 raise RuntimeError("the viewer disconnected before it could export") from None
             try:
@@ -224,12 +233,14 @@ class ClientHub:
         """A viewer answered an export request (or reported it failed). Safe to call from any thread -- both
         transports (the WebSocket's incoming-message loop, the widget's comm callback) call this as soon as they
         have decoded a reply, whichever thread that happens to run on."""
+        self.export_responses_relayed += 1
         loop = self._loop
         if loop is None or loop.is_closed():
             return
         loop.call_soon_threadsafe(self._resolve_export, request_id, data, error)
 
     def _resolve_export(self, request_id: str, data: bytes | None, error: str | None) -> None:
+        self.export_responses_handled += 1
         future = self._pending_exports.get(request_id)
         if future is not None and not future.done():
             future.set_result((data, error))

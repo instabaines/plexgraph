@@ -5,6 +5,23 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 
 ## [Unreleased]
 
+### Added
+- **`handle.export_async()`/`handle.save_async()`**: `await`-based equivalents of `export()`/`save()` (added in
+  0.3.0), for use directly in a notebook cell (Jupyter supports top-level `await`). Recommended over the plain
+  `export()`/`save()` for the notebook widget specifically -- see "Fixed" below for why.
+
+### Fixed
+- `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
+  correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
+  own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's
+  own message handling, which sometimes runs on the exact thread the call is blocking -- confirmed directly, by
+  instrumenting a real run and tracing where the reply actually got processed (immediately after the blocking
+  wait gave up and freed that thread, not before). `export_async()`/`save_async()` do not have this problem:
+  `await` is a genuine cooperative yield, so it cannot starve the kernel's own message handling the way a thread
+  block can. The plain `export()`/`save()` remain unchanged (still correct for a browser tab, and still usable
+  against the widget -- just not guaranteed to succeed within their timeout); their docstrings and the user guide
+  now say so.
+
 ## [0.3.0]
 
 ### Added

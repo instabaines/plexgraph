@@ -188,9 +188,16 @@ class _WidgetBridge(ClientHub):
         listening" message never reached the kernel at all (points at the comm channel itself, before any of our code
         runs); framesSent/bytesSent being 0 despite a hello means streaming did not start or failed immediately
         (lastStreamingError, if any, says why); framesSent growing but the browser reporting no graph points at
-        something between the kernel's model.send() and the browser's postMessage relay."""
+        something between the kernel's model.send() and the browser's postMessage relay. exportRequestsSent is 0 if
+        ShowHandle.export()/.save() never even found a client to ask (see request_export); exportResponsesRelayed
+        growing but exportResponsesHandled not means resolve_export's own loop had already gone (see its loop
+        check) between the request and the reply arriving -- distinct from a reply that never arrives at all
+        (exportResponsesRelayed staying 0), which points at the browser -> kernel relay itself (widget.js/anywidget)."""
         return {"hellosReceived": self._hellos_received, "framesSent": self._frames_sent,
-                "bytesSent": self._bytes_sent, "lastStreamingError": self._last_streaming_error}
+                "bytesSent": self._bytes_sent, "lastStreamingError": self._last_streaming_error,
+                "exportRequestsSent": self.export_requests_sent,
+                "exportResponsesRelayed": self.export_responses_relayed,
+                "exportResponsesHandled": self.export_responses_handled}
 
     def stop(self) -> None:
         self._stopped = True

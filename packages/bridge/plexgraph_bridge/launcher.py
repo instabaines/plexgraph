@@ -14,6 +14,7 @@ describes, and what that would buy over this.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import http.server
 import json
 import logging
@@ -294,6 +295,15 @@ class ShowHandle:
         `GraphWidget.diagnostics`. Empty for a viewer that is not a notebook widget."""
         return self.widget.diagnostics if self.widget is not None else {}
 
+    def _export_future(self, format: str, timeout: float) -> "tuple[str, concurrent.futures.Future[bytes]]":  # noqa: A002
+        fmt = format.lower()
+        if fmt not in ("svg", "png"):
+            raise ValueError(f"format must be 'svg' or 'png', got {format!r}")
+        if self._hub is None or self._hub.loop is None:
+            raise RuntimeError("no viewer is connected -- open the viewer (or wait for the notebook widget to "
+                                "render) before exporting")
+        return fmt, asyncio.run_coroutine_threadsafe(self._hub.request_export(fmt, timeout), self._hub.loop)
+
     def export(self, format: str = "svg", *, timeout: float = 10.0) -> str | bytes:  # noqa: A002
         """Get the open viewer's current view: `"svg"` (the default) as text, real vector geometry, the same as the
         viewer's own Export button; `"png"` as bytes, a raster capture of the canvas. Needs a connected viewer --
@@ -303,26 +313,55 @@ class ShowHandle:
 
             svg_text = handle.export()          # or handle.export("svg")
             png_bytes = handle.export("png")
-        """
-        fmt = format.lower()
-        if fmt not in ("svg", "png"):
-            raise ValueError(f"format must be 'svg' or 'png', got {format!r}")
-        if self._hub is None or self._hub.loop is None:
-            raise RuntimeError("no viewer is connected -- open the viewer (or wait for the notebook widget to "
-                                "render) before exporting")
-        future = asyncio.run_coroutine_threadsafe(self._hub.request_export(fmt, timeout), self._hub.loop)
+
+        From the notebook widget specifically (not the browser-tab/`ws_url` route, which this does not affect):
+        this call blocks the thread it's made from until the viewer replies, but the reply can only be delivered
+        by the Jupyter kernel's own message handling, which sometimes runs on that exact same thread -- in that
+        case this waits the full `timeout` and then raises TimeoutError, even though the viewer answered
+        correctly. `export_async()`/`save_async()` do not have this limitation (`await` is a real yield, so the
+        kernel's own message handling is never blocked by it) and are the better choice there; use them with
+        `await` directly in a cell (Jupyter supports top-level await) if you hit this. See "Known limitations" in
+        the user guide."""
+        fmt, future = self._export_future(format, timeout)
         data = future.result(timeout=timeout + 5)  # a little slack past request_export's own internal timeout
         return data.decode("utf-8") if fmt == "svg" else data
 
     def save(self, path: str | os.PathLike[str], *, format: str | None = None, timeout: float = 10.0) -> None:  # noqa: A002
         """Export the open viewer's current view and write it to `path` -- `handle.save("graph.svg")` needs no
         click, no GUI: just Python. The format is guessed from `path`'s extension (.svg or .png) unless `format` is
-        given. See `export()` for what "current view" means and when this raises."""
-        path = Path(path)
-        fmt = format.lower() if format else path.suffix.lstrip(".").lower()
-        if fmt not in ("svg", "png"):
-            raise ValueError(f"can't tell the format from the extension {path.suffix!r}; pass format=\"svg\" or \"png\"")
+        given. See `export()` for what "current view" means and when this raises (and `save_async()` for a
+        notebook-widget limitation it has that the `await`-based `save_async()` does not)."""
+        path, fmt = self._save_path(path, format)
         data = self.export(fmt, timeout=timeout)
+        self._write_export(path, data)
+
+    async def export_async(self, format: str = "svg", *, timeout: float = 10.0) -> str | bytes:  # noqa: A002
+        """The same as `export()`, awaited instead of blocking: `await handle.export_async("svg")` (Jupyter
+        supports `await` directly in a cell, with no `async def` wrapper needed). Prefer this over `export()`
+        when calling from a notebook cell against the notebook widget specifically: `await` is a genuine
+        cooperative yield, so it cannot block the Jupyter kernel's own message handling from running -- which is
+        exactly what `export()`'s plain blocking wait can occasionally do there (see its docstring)."""
+        fmt, future = self._export_future(format, timeout)
+        data = await asyncio.wait_for(asyncio.wrap_future(future), timeout + 5)
+        return data.decode("utf-8") if fmt == "svg" else data
+
+    async def save_async(self, path: str | os.PathLike[str], *, format: str | None = None, timeout: float = 10.0) -> None:  # noqa: A002
+        """The `await`-based `save()` -- see `export_async()` for why this is the better choice than `save()`
+        against the notebook widget specifically."""
+        path, fmt = self._save_path(path, format)
+        data = await self.export_async(fmt, timeout=timeout)
+        self._write_export(path, data)
+
+    @staticmethod
+    def _save_path(path: str | os.PathLike[str], format: str | None) -> tuple[Path, str]:  # noqa: A002
+        p = Path(path)
+        fmt = format.lower() if format else p.suffix.lstrip(".").lower()
+        if fmt not in ("svg", "png"):
+            raise ValueError(f"can't tell the format from the extension {p.suffix!r}; pass format=\"svg\" or \"png\"")
+        return p, fmt
+
+    @staticmethod
+    def _write_export(path: Path, data: str | bytes) -> None:
         if isinstance(data, str):
             path.write_text(data, encoding="utf-8")
         else:
