@@ -17,19 +17,14 @@ path to a graph on screen.
 
 ## Status
 
-Early development. The package is ready to release but is **not yet published to PyPI**. Once it is, `pip install plexgraph`
-installs everything, viewer included, with no Node.js needed. Separately, the layout and sliced renderer are not yet
-validated for production use at 100K nodes: see the [evaluation lab](examples/notebooks/evaluation.ipynb) and the
+Early development, published on PyPI. The layout and sliced renderer are not yet validated for production use at
+100K nodes: see the [evaluation lab](examples/notebooks/evaluation.ipynb) and the
 [measured limitations](benchmarks/README.md). Releases are described in [docs/releasing.md](docs/releasing.md).
 
 ## Install
 
-Until the first release is on PyPI, build the package and install the wheel. This produces exactly what users will get:
-
 ```sh
-pip install build
-python scripts/build_release.py               # needs Node.js and pnpm once, to build the viewer
-pip install dist/plexgraph-*.whl
+pip install plexgraph
 pip install "plexgraph[jupyter]"            # optional: the notebook widget (anywidget); see "Where it runs" in the user guide
 pip install pandas networkx                   # optional: only for the pandas/networkx loaders
 ```
@@ -44,13 +39,14 @@ g.add_edge("alice", "bob", weight=2.0)
 pg.show(g, node_color=pg.by_degree("plasma"))
 ```
 
-`python -m plexgraph demo` opens a demo graph. The rest of this page is for working *on* plexgraph.
+`python -m plexgraph demo` opens a demo graph. The rest of this page is for working *on* plexgraph itself
+(building from source, running the test suites) — if you just want to use it, the install above is
+everything you need.
 
 ## Quick start
 
 One-time setup: build the frontend, then create one Python environment for the whole repo (both
-packages, the optional pandas/networkx loaders, tests, notebooks and benchmarks). A real release will ship
-a single installable `plexgraph` package.
+packages, the optional pandas/networkx loaders, tests, notebooks and benchmarks).
 
 ```sh
 # 1. Frontend: install JS deps and build the static app the Python side serves.
