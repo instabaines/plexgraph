@@ -65,6 +65,8 @@ class BridgeServer(ClientHub):
         port: int = 0,
         layout_iterations: int = 200,
         seed: int | None = None,
+        layer_gravity: float = 0.0,
+        hub_inertia: float = 0.5,
         style: "StyleController | None" = None,
         static_dir: Path | None = None,
         token: str | None = None,
@@ -77,7 +79,8 @@ class BridgeServer(ClientHub):
         With `static_dir`, plain HTTP requests on this same port are answered with the viewer's files, so one
         port serves both the page and the WebSocket. That is what a remote notebook needs: it can forward a single
         port, and the page and the socket then share an origin."""
-        super().__init__(graph, layout_iterations=layout_iterations, seed=seed, style=style)
+        super().__init__(graph, layout_iterations=layout_iterations, seed=seed,
+                          layer_gravity=layer_gravity, hub_inertia=hub_inertia, style=style)
         self.static_dir = static_dir
         self.token = token
         self.host = host

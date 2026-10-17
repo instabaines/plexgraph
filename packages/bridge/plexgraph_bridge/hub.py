@@ -92,6 +92,8 @@ class ClientHub:
         *,
         layout_iterations: int = 200,
         seed: int | None = None,
+        layer_gravity: float = 0.0,
+        hub_inertia: float = 0.5,
         style: "StyleController | None" = None,
     ) -> None:
         self.graph = graph
@@ -104,6 +106,8 @@ class ClientHub:
         self._resync_needed = False
         self.layout_iterations = layout_iterations
         self.seed = seed
+        self.layer_gravity = layer_gravity
+        self.hub_inertia = hub_inertia
         # Requests to a connected viewer that Python is waiting on a reply to (currently just exports; see
         # request_export/resolve_export). Keyed by a random id so a reply can be matched to its request even with
         # several outstanding at once.
@@ -131,7 +135,8 @@ class ClientHub:
     ) -> None:
         """Bring one viewer up to date and keep it there until `until_gone()` returns (the viewer left).
         `closed` is what `send` raises once the viewer has gone, which is normal and not an error."""
-        session = Session(self.graph, layout_iterations=self.layout_iterations, seed=self.seed)
+        session = Session(self.graph, layout_iterations=self.layout_iterations, seed=self.seed,
+                          layer_gravity=self.layer_gravity, hub_inertia=self.hub_inertia)
         client = _Client(send, closed)
         # Registered before anything is sent so that no style update can slip past this viewer while it connects.
         self._clients.add(client)

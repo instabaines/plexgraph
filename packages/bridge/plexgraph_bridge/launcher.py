@@ -139,7 +139,8 @@ def _widget_available() -> bool:
 
 
 def _show_widget(graph: Graph, controller: StyleController, viewer_style: dict[str, Any], *, notebook: str,
-                 layout_iterations: int, seed: int | None, height: int, return_handle: bool) -> ShowHandle | None:
+                 layout_iterations: int, seed: int | None, layer_gravity: float, hub_inertia: float,
+                 height: int, return_handle: bool) -> ShowHandle | None:
     from IPython.display import display
 
     from plexgraph_bridge.widget import GraphWidget
@@ -151,7 +152,8 @@ def _show_widget(graph: Graph, controller: StyleController, viewer_style: dict[s
             output.enable_custom_widget_manager()
         except Exception:
             logger.warning("could not enable Colab's custom widget manager; the widget may not appear", exc_info=True)
-    view = GraphWidget(graph, controller=controller, layout_iterations=layout_iterations, seed=seed, height=height,
+    view = GraphWidget(graph, controller=controller, layout_iterations=layout_iterations, seed=seed,
+                       layer_gravity=layer_gravity, hub_inertia=hub_inertia, height=height,
                        viewer_style=viewer_style)
     display(view)
     handle = ShowHandle(ws_port=None, http_port=None, thread=None, _stop=view.close, widget=view, _style=controller,
@@ -424,6 +426,8 @@ def show(
     http_port: int = 0,
     layout_iterations: int = 200,
     seed: int | None = None,
+    layer_gravity: float = 0.0,
+    hub_inertia: float = 0.5,
     open_browser: bool = True,
     block: bool | None = None,
     width: int = 900,
@@ -465,6 +469,14 @@ def show(
       process stays alive to keep serving — pass block=False to run the
       server without blocking (e.g. from your own event loop or another
       thread).
+
+    Layout:
+    - `layer_gravity` (default 0, off) is experimental: on a multiplex graph, it adds one virtual "hub" per
+      layer that layer members are pulled toward (and that pulls back), so each layer clusters together and
+      distinct layers spread apart; a node in several layers settles between their hubs. It has no effect on
+      a graph with no layers, and 0 reproduces the plain layout exactly. `hub_inertia` (0-1, default 0.5)
+      damps how much a hub moves per iteration, to curb oscillation between a hub and the nodes pulled
+      toward it; it does nothing when `layer_gravity` is 0.
 
     Sizing:
     - `width`/`height` control the rendered viewer's pixel size (the
@@ -569,7 +581,8 @@ def show(
         if widget:
             try:
                 return _show_widget(graph, controller, style, notebook=notebook, layout_iterations=layout_iterations,
-                                    seed=seed, height=height, return_handle=return_handle)
+                                    seed=seed, layer_gravity=layer_gravity, hub_inertia=hub_inertia,
+                                    height=height, return_handle=return_handle)
             except Exception as error:
                 if asked_for_widget:
                     raise
@@ -618,6 +631,8 @@ def show(
                 port=ws_port,
                 layout_iterations=layout_iterations,
                 seed=seed,
+                layer_gravity=layer_gravity,
+                hub_inertia=hub_inertia,
                 style=controller,
                 static_dir=app_dir if single_port else None,
                 token=token,

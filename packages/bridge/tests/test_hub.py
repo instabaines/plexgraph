@@ -81,6 +81,28 @@ async def test_streams_the_graph_then_layout_steps_in_order():
 
 
 @pytest.mark.asyncio
+async def test_layer_gravity_and_hub_inertia_reach_the_session(monkeypatch):
+    captured = {}
+
+    class FakeSession:
+        def __init__(self, graph, **kwargs):
+            captured.update(kwargs)
+
+        async def stream_to(self, send, after_graph=None):
+            pass
+
+    monkeypatch.setattr("plexgraph_bridge.hub.Session", FakeSession)
+    hub = ClientHub(_graph(), layout_iterations=1, seed=1, layer_gravity=0.7, hub_inertia=0.3)
+    gone = asyncio.Event()
+    task, _ = await _serve(hub, FakeClient(), run_until=gone)
+    await asyncio.sleep(0)
+    gone.set()
+    await task
+    assert captured["layer_gravity"] == 0.7
+    assert captured["hub_inertia"] == 0.3
+
+
+@pytest.mark.asyncio
 async def test_two_clients_each_get_their_own_independent_stream():
     hub = ClientHub(_graph(20), layout_iterations=3, seed=1)
     a, b = FakeClient(), FakeClient()

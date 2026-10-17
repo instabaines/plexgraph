@@ -28,3 +28,17 @@ async def test_layout_runs_off_event_loop_and_respects_backpressure(monkeypatch)
         sent += 1
     await Session(Graph()).stream_to(send)
     assert sent == 4
+
+
+@pytest.mark.asyncio
+async def test_layer_gravity_and_hub_inertia_reach_force_directed_layout(monkeypatch):
+    captured = {}
+    def steps(*args, **kwargs):
+        captured.update(kwargs)
+        yield LayoutStep(1, np.zeros((0, 2)), True)
+    monkeypatch.setattr("plexgraph_bridge.session.force_directed_layout", steps)
+    async def send(data):
+        pass
+    await Session(Graph(), layer_gravity=1.5, hub_inertia=0.2).stream_to(send)
+    assert captured["layer_gravity"] == 1.5
+    assert captured["hub_inertia"] == 0.2

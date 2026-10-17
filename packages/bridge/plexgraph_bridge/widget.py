@@ -112,8 +112,10 @@ class _WidgetBridge(ClientHub):
     afresh: the graph, the current style, then the layout as it converges."""
 
     def __init__(self, widget: "GraphWidget", graph: Graph, *, layout_iterations: int, seed: int | None,
-                 style: "StyleController | None") -> None:
-        super().__init__(graph, layout_iterations=layout_iterations, seed=seed, style=style)
+                 layer_gravity: float = 0.0, hub_inertia: float = 0.5,
+                 style: "StyleController | None" = None) -> None:
+        super().__init__(graph, layout_iterations=layout_iterations, seed=seed,
+                          layer_gravity=layer_gravity, hub_inertia=hub_inertia, style=style)
         self._widget = widget
         self._background = self._loop = _shared_loop()
         self._task: asyncio.Task[None] | None = None
@@ -215,7 +217,8 @@ class GraphWidget(anywidget.AnyWidget):
     viewer_query = traitlets.Unicode("?ws=parent").tag(sync=True)
 
     def __init__(self, graph: Graph, *, controller: "StyleController | None" = None, layout_iterations: int = 200,
-                 seed: int | None = None, height: int = 600, viewer_style: dict[str, Any] | None = None) -> None:
+                 seed: int | None = None, layer_gravity: float = 0.0, hub_inertia: float = 0.5,
+                 height: int = 600, viewer_style: dict[str, Any] | None = None) -> None:
         query = "?ws=parent"
         if viewer_style:
             from urllib.parse import quote
@@ -226,7 +229,8 @@ class GraphWidget(anywidget.AnyWidget):
         self._state: dict[str, Any] = {}
         self._errors: list[dict[str, Any]] = []
         self._host: dict[str, Any] = {}
-        self._plexgraph = _WidgetBridge(self, graph, layout_iterations=layout_iterations, seed=seed, style=controller)
+        self._plexgraph = _WidgetBridge(self, graph, layout_iterations=layout_iterations, seed=seed,
+                                         layer_gravity=layer_gravity, hub_inertia=hub_inertia, style=controller)
         if controller is not None:
             controller.bind(self._plexgraph.push_style)
         self.on_msg(self._on_page_message)

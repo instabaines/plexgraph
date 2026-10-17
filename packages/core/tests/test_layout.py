@@ -132,6 +132,91 @@ def test_invalid_layout_parameters_raise():
     import pytest
     for kwargs in ({"iterations": 0}, {"area": 0}, {"area": float("nan")},
                    {"gravity": -1}, {"convergence_threshold": -1},
-                   {"max_exact_repulsion_nodes": -1}):
+                   {"max_exact_repulsion_nodes": -1}, {"layer_gravity": -1},
+                   {"hub_inertia": -0.1}, {"hub_inertia": 1.1}):
         with pytest.raises(ValueError):
             next(force_directed_layout(_path_graph(3), **kwargs))
+
+
+def _two_layer_path_graph() -> tuple[Graph, list[int], list[int]]:
+    """Two layer-tagged paths joined by one layer-less bridge edge, so they stay one connected component --
+    deliberately path-shaped so the analytic path shortcut would apply without layer_gravity."""
+    g = Graph()
+    layer_a = g.add_layer("a")
+    layer_b = g.add_layer("b")
+    a_nodes = [g.add_node(f"a{i}") for i in range(8)]
+    b_nodes = [g.add_node(f"b{i}") for i in range(8)]
+    for i in range(len(a_nodes) - 1):
+        g.add_edge(a_nodes[i], a_nodes[i + 1], layer=layer_a)
+    for i in range(len(b_nodes) - 1):
+        g.add_edge(b_nodes[i], b_nodes[i + 1], layer=layer_b)
+    g.add_edge(a_nodes[0], b_nodes[0])
+    return g, a_nodes, b_nodes
+
+
+def test_layer_gravity_off_by_default_matches_explicit_zero():
+    g, _, _ = _two_layer_path_graph()
+    default = list(force_directed_layout(g, iterations=20, seed=1))[-1].positions
+    explicit = list(force_directed_layout(g, iterations=20, seed=1, layer_gravity=0.0))[-1].positions
+    np.testing.assert_array_equal(default, explicit)
+
+
+def test_layer_gravity_zero_still_uses_the_analytic_path_shortcut():
+    # A regression guard on the fix itself: layer_gravity=0 (the default) must not pay for -- or be affected
+    # by -- the hub machinery at all, including the fast analytic path for path-shaped components.
+    g, _, _ = _two_layer_path_graph()
+    steps = list(force_directed_layout(g, iterations=500, seed=1))
+    assert len(steps) == 1
+    assert steps[0].converged
+
+
+def test_layer_gravity_runs_the_simulation_even_for_path_shaped_layers():
+    # The bug this feature exposed: the analytic path shortcut froze every node before hub particles were
+    # even added, so layer_gravity silently had no effect on any path/cycle-shaped graph.
+    g, _, _ = _two_layer_path_graph()
+    steps = list(force_directed_layout(g, iterations=500, seed=1, layer_gravity=1.0))
+    assert len(steps) > 1
+
+
+def test_layer_gravity_pulls_each_layer_toward_its_own_hub():
+    g, a_nodes, b_nodes = _two_layer_path_graph()
+
+    def layer_separation(layer_gravity: float) -> float:
+        final = list(force_directed_layout(g, iterations=500, seed=3, layer_gravity=layer_gravity))[-1].positions
+        return np.linalg.norm(final[a_nodes].mean(axis=0) - final[b_nodes].mean(axis=0))
+
+    baseline = layer_separation(0.0)
+    with_hubs = layer_separation(1.0)
+    assert with_hubs > baseline * 1.25
+
+
+def test_layer_gravity_blends_a_node_shared_across_two_layers():
+    g = Graph()
+    layer_a = g.add_layer("a")
+    layer_b = g.add_layer("b")
+    shared = g.add_node("shared")
+    a_rest = [g.add_node(f"a{i}") for i in range(5)]
+    b_rest = [g.add_node(f"b{i}") for i in range(5)]
+    for x in a_rest:
+        g.add_edge(shared, x, layer=layer_a)
+    for i in range(len(a_rest) - 1):
+        g.add_edge(a_rest[i], a_rest[i + 1], layer=layer_a)
+    for x in b_rest:
+        g.add_edge(shared, x, layer=layer_b)
+    for i in range(len(b_rest) - 1):
+        g.add_edge(b_rest[i], b_rest[i + 1], layer=layer_b)
+
+    final = list(force_directed_layout(g, iterations=1500, seed=5, layer_gravity=1.5))[-1].positions
+    a_centroid = final[a_rest].mean(axis=0)
+    b_centroid = final[b_rest].mean(axis=0)
+    hub_separation = np.linalg.norm(a_centroid - b_centroid)
+    distance_to_a = np.linalg.norm(final[shared] - a_centroid)
+    distance_to_b = np.linalg.norm(final[shared] - b_centroid)
+    # Pulled toward both hubs at once, so it settles roughly between them rather than fully inside either.
+    assert abs(distance_to_a - distance_to_b) < 0.2 * hub_separation
+
+
+def test_layer_gravity_never_changes_the_positions_shape():
+    g, _, _ = _two_layer_path_graph()
+    step = list(force_directed_layout(g, iterations=5, seed=1, layer_gravity=2.0))[-1]
+    assert step.positions.shape == (g.num_nodes, 2)

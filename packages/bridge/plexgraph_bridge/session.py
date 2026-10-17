@@ -22,17 +22,22 @@ class Session:
         *,
         layout_iterations: int = 200,
         seed: int | None = None,
+        layer_gravity: float = 0.0,
+        hub_inertia: float = 0.5,
     ) -> None:
         self.graph = graph
         self.layout_iterations = layout_iterations
         self.seed = seed
+        self.layer_gravity = layer_gravity
+        self.hub_inertia = hub_inertia
 
     async def stream_to(self, send: Sender, after_graph: Callable[[], Awaitable[None]] | None = None) -> None:
         await send(encode_graph(self.graph))
         if after_graph is not None:
             await after_graph()  # e.g. bring the viewer's style up to date before the layout starts moving
         steps = force_directed_layout(
-            self.graph, iterations=self.layout_iterations, seed=self.seed
+            self.graph, iterations=self.layout_iterations, seed=self.seed,
+            layer_gravity=self.layer_gravity, hub_inertia=self.hub_inertia,
         )
         while True:
             # Advance one step at a time off the event-loop thread. Awaiting

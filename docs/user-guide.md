@@ -523,6 +523,23 @@ movement updates interaction overlays without redrawing the graph. Remaining
 large-graph limitations include force-approximation quality, dense neighborhoods,
 and first-frame aggregation cost. See [benchmark results](https://github.com/instabaines/plexgraph/blob/develop/benchmarks/README.md).
 
+### Layer-aware layout (experimental)
+
+On a multiplex graph, `show(g, layer_gravity=1.0)` adds one virtual "hub" per layer: every node with a
+connector in that layer is pulled toward that layer's hub (and pulls it back — a real mutual attraction, not
+a fixed anchor), and hubs repel each other. The effect is that each layer's nodes cluster together and
+distinct layers spread apart; a node that belongs to several layers settles somewhere between their hubs
+rather than fully inside any one of them. It is off by default (`layer_gravity=0`), reproduces today's
+layout exactly when left off, and has no effect on a graph with no layers. `hub_inertia` (0-1, default 0.5)
+damps how much a hub itself moves per iteration, to curb the oscillation a hub and the nodes pulled toward
+it can otherwise drive into each other.
+
+This is a new, experimental knob, not a finished "multilayer layout mode": there is no guidance yet on
+picking a value (0.5-2 is a reasonable range to start experimenting in), it can only pull layers apart, not
+choose how they're arranged, and a layer whose own members already form a strongly separated community may
+show little additional effect, since the ordinary repulsion/attraction forces already find that structure
+on their own. Try it on your own graph and compare against the default before relying on it.
+
 ### Search and neighborhood inspection
 
 **Find a node** searches keys (first 20 substring matches). Select a result to
@@ -613,6 +630,10 @@ Worth knowing about rather than discovering by surprise:
   kernel's own message handling, which sometimes runs on the exact thread the call is blocking. Use
   `export_async()`/`save_async()` (`await`-based) instead; see "Exporting" above. The browser-tab route is not
   affected — it has no such thread to share.
+- **`layer_gravity` is new and experimental** (see [Layer-aware layout](#layer-aware-layout-experimental)) —
+  checked on graphs up to a few thousand nodes with each layer forming one cohesive community, but not yet on
+  a layer containing several disconnected sub-communities, where a single hub per layer is expected to
+  oscillate between them or settle at an unhelpful empty midpoint instead of representing either one.
 
 ### Aligned slice layouts
 

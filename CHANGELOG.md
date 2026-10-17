@@ -9,6 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
 - **`handle.export_async()`/`handle.save_async()`**: `await`-based equivalents of `export()`/`save()` (added in
   0.3.0), for use directly in a notebook cell (Jupyter supports top-level `await`). Recommended over the plain
   `export()`/`save()` for the notebook widget specifically -- see "Fixed" below for why.
+- **`show(g, layer_gravity=...)`** (experimental, off by default): on a multiplex graph, adds one virtual "hub"
+  particle per layer that layer members are pulled toward (and pull back -- a real mutual attraction, not a
+  fixed anchor), with hubs repelling each other so distinct layers spread apart; a node in several layers
+  settles between their hubs. `hub_inertia` (default 0.5) damps hub movement to curb oscillation. See "Layer-aware
+  layout" in the user guide; not yet validated on a layer with multiple disconnected sub-communities.
 
 ### Fixed
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered

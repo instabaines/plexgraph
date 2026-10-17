@@ -173,17 +173,55 @@ def _analytic_components(pos, edges, hyperedges, labels, counts):
     return fixed
 
 
+def _layer_memberships(connectors, num_layers: int) -> tuple[np.ndarray, np.ndarray]:
+    """One (node, layer) pair per node that has at least one connector in that layer -- deduplicated, so a node
+    with several same-layer edges still gets exactly one hub-attraction spring for that layer."""
+    if num_layers:
+        pairs = {(node, c.layer_id) for c in connectors if c.layer_id is not None for node in c.endpoints}
+        if pairs:
+            nodes, layers = (np.array(column, dtype=np.int64) for column in zip(*pairs))
+            return nodes, layers
+    empty = np.empty(0, dtype=np.int64)
+    return empty, empty
+
+
+def _initial_hub_positions(pos: np.ndarray, node_idx: np.ndarray, layer_idx: np.ndarray,
+                            num_layers: int) -> np.ndarray:
+    """Seed each layer's hub at the centroid of its own members, so hubs start already separated instead of
+    colliding at one shared point. A layer with no members (declared but never used) stays at the origin."""
+    hub_pos = np.zeros((num_layers, 2))
+    if len(node_idx):
+        sums = np.zeros((num_layers, 2))
+        np.add.at(sums, layer_idx, pos[node_idx])
+        counts = np.bincount(layer_idx, minlength=num_layers)
+        nonempty = counts > 0
+        hub_pos[nonempty] = sums[nonempty] / counts[nonempty, None]
+    return hub_pos
+
+
 def force_directed_layout(
     graph: Graph, *, iterations: int = 200, area: float = 1.0,
     gravity: float = 0.01, convergence_threshold: float = 1e-4,
     seed: int | None = None,
     max_exact_repulsion_nodes: int = MAX_EXACT_REPULSION_NODES,
+    layer_gravity: float = 0.0,
+    hub_inertia: float = 0.5,
 ) -> Iterator[LayoutStep]:
     """Yield independent position snapshots; exhausted budget is not convergence.
 
     `max_exact_repulsion_nodes` chooses blocked exact vs spatial mesh forces.
     Repulsion remains enabled on either side. `area` controls display extent.
-    Node weights/directions/layers do not change force strength in this solver.
+    Node weights/directions do not change force strength in this solver.
+
+    `layer_gravity` (off by default) adds one virtual "hub" particle per
+    layer: every node that has a connector in that layer gets a spring
+    pulling it toward the hub, and (reaction) the hub toward it; hubs repel
+    each other like ordinary nodes. A node in several layers is pulled
+    toward all of their hubs at once. Hubs never appear in the yielded
+    positions -- only the first `graph.num_nodes` rows are real nodes.
+    `hub_inertia` (0-1) damps how much a hub itself moves per iteration, to
+    curb the oscillation a hub and the nodes pulled toward it can drive into
+    each other; it has no effect when `layer_gravity` is 0.
     """
     if not isinstance(iterations, (int, np.integer)) or iterations < 1:
         raise ValueError("iterations must be a positive integer")
@@ -193,6 +231,10 @@ def force_directed_layout(
         raise ValueError("gravity and convergence_threshold must be nonnegative and finite")
     if not isinstance(max_exact_repulsion_nodes, (int, np.integer)) or max_exact_repulsion_nodes < 0:
         raise ValueError("max_exact_repulsion_nodes must be a nonnegative integer")
+    if not np.isfinite(layer_gravity) or layer_gravity < 0:
+        raise ValueError("layer_gravity must be nonnegative and finite")
+    if not np.isfinite(hub_inertia) or not (0.0 <= hub_inertia <= 1.0):
+        raise ValueError("hub_inertia must be between 0 and 1")
     n = graph.num_nodes
     if n == 0:
         yield LayoutStep(0, np.zeros((0, 2)), True)
@@ -204,14 +246,22 @@ def force_directed_layout(
     hyperedges = [np.asarray(c.endpoints, dtype=np.int64) for c in connectors if c.is_hyperedge]
     labels, counts = _components(n, edges, hyperedges)
     centers, widths = _tiles(counts)
+    num_layers = len(graph.layers()) if layer_gravity > 0 else 0
+    hub_node_idx, hub_layer_idx = _layer_memberships(connectors, num_layers)
     pos = np.random.default_rng(seed).uniform(-area / 2, area / 2, (n, 2))
-    fixed = _analytic_components(pos, edges, hyperedges, labels, counts)
+    # The analytic path/cycle shortcut below freezes a component's nodes without ever running the simulation --
+    # skipped when hubs are active, since freezing would silently ignore the layer forces being asked for.
+    fixed = np.zeros(n, dtype=bool) if num_layers else _analytic_components(pos, edges, hyperedges, labels, counts)
     if fixed.all():
         yield LayoutStep(1, _pack(pos, labels, counts, centers, widths, area), True)
         return
+    if num_layers:
+        pos = np.vstack([pos, _initial_hub_positions(pos, hub_node_idx, hub_layer_idx, num_layers)])
+        fixed = np.concatenate([fixed, np.zeros(num_layers, dtype=bool)])
     k = area / np.sqrt(n)
     for it in range(1, iterations + 1):
-        disp = _repulsion(pos, k, n <= max_exact_repulsion_nodes)
+        disp = np.zeros_like(pos)
+        disp[:n] = _repulsion(pos[:n], k, n <= max_exact_repulsion_nodes)
         if len(edges):
             u, v = edges.T
             delta = pos[u] - pos[v]
@@ -223,6 +273,16 @@ def force_directed_layout(
             # One spring per incidence. No clique, no virtual node on the wire.
             force = delta * (np.linalg.norm(delta, axis=1) / k)[:, None]
             np.add.at(disp, members, -force)
+        if num_layers:
+            # A node is pulled toward its layer's hub, and (reaction) the hub toward it -- real mutual attraction,
+            # not a fixed anchor. Hubs additionally repel each other so distinct layers spread apart.
+            delta = pos[hub_node_idx] - pos[n + hub_layer_idx]
+            force = delta * (layer_gravity * np.linalg.norm(delta, axis=1) / k)[:, None]
+            np.add.at(disp, hub_node_idx, -force)
+            np.add.at(disp, n + hub_layer_idx, force)
+            if num_layers > 1:
+                disp[n:] += _repulsion(pos[n:], k, True)
+            disp[n:] *= hub_inertia
         disp -= gravity * pos
         disp[fixed] = 0
         length = np.linalg.norm(disp, axis=1)
@@ -231,7 +291,8 @@ def force_directed_layout(
         temperature = area * .08 * (1 - (it - 1) / iterations)
         step = disp * (np.minimum(length, temperature) / np.maximum(length, 1e-12))[:, None]
         pos += step
-        converged = bool(np.max(length) < convergence_threshold)
-        yield LayoutStep(it, _pack(pos, labels, counts, centers, widths, area), converged)
+        # Hub jitter alone must not block convergence -- only real node displacement counts.
+        converged = bool(np.max(length[:n]) < convergence_threshold)
+        yield LayoutStep(it, _pack(pos[:n], labels, counts, centers, widths, area), converged)
         if converged:
             return
