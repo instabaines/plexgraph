@@ -155,6 +155,20 @@ def _export_request(page: Page) -> dict:
     return next(f["message"] for f in frames if f["message"]["type"] == "export_request")
 
 
+def _wait_until(predicate, timeout: float = 5.0) -> None:
+    """Poll for a condition driven by the hub's own event-loop thread. `request_export` increments
+    export_requests_sent only after `client.send(...)` fully returns -- which, for the widget, includes a pacing
+    sleep after every chunk (see `_send_frame`) -- while the page-side frame this test waits for upstream is
+    observable as soon as the last chunk's data is handed off, on a different thread. The two are not atomic with
+    each other, so a bare immediate assert on the counter is inherently racy; this polls instead of asserting once."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return
+        time.sleep(0.02)
+    raise AssertionError("condition not met in time")
+
+
 def test_export_request_round_trips_through_the_widget(make_widget):
     import asyncio
 
@@ -165,7 +179,7 @@ def test_export_request_round_trips_through_the_widget(make_widget):
     future = asyncio.run_coroutine_threadsafe(hub.request_export("svg", 5), hub.loop)
     request = _export_request(page)
     assert request["format"] == "svg" and request["id"]
-    assert hub.export_requests_sent == 1
+    _wait_until(lambda: hub.export_requests_sent == 1)
     page.view._on_page_message(page.view, {"type": "export", "id": request["id"], "format": "svg", "error": None},
                                [b"<svg>ok</svg>"])
     assert future.result(timeout=5) == b"<svg>ok</svg>"
