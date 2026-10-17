@@ -538,7 +538,9 @@ This is a new, experimental knob, not a finished "multilayer layout mode": there
 picking a value (0.5-2 is a reasonable range to start experimenting in), it can only pull layers apart, not
 choose how they're arranged, and a layer whose own members already form a strongly separated community may
 show little additional effect, since the ordinary repulsion/attraction forces already find that structure
-on their own. Try it on your own graph and compare against the default before relying on it.
+on their own. More importantly, **one hub represents a whole layer, not each cluster within it** — see
+"Known limitations" below for a confirmed case where this makes a layout worse, not better. Try it on your
+own graph and compare against the default before relying on it.
 
 ### Search and neighborhood inspection
 
@@ -630,10 +632,14 @@ Worth knowing about rather than discovering by surprise:
   kernel's own message handling, which sometimes runs on the exact thread the call is blocking. Use
   `export_async()`/`save_async()` (`await`-based) instead; see "Exporting" above. The browser-tab route is not
   affected — it has no such thread to share.
-- **`layer_gravity` is new and experimental** (see [Layer-aware layout](#layer-aware-layout-experimental)) —
-  checked on graphs up to a few thousand nodes with each layer forming one cohesive community, but not yet on
-  a layer containing several disconnected sub-communities, where a single hub per layer is expected to
-  oscillate between them or settle at an unhelpful empty midpoint instead of representing either one.
+- **`layer_gravity` pulls a layer's disconnected sub-communities together** (see [Layer-aware
+  layout](#layer-aware-layout-experimental)) — it adds one hub per *layer*, not one per cluster, so a layer
+  containing two or more structurally unrelated groups gets them pulled toward the same point instead of kept
+  apart. Confirmed directly: on a layer with two disconnected sub-communities joined to the rest of the graph
+  only through another layer, raising `layer_gravity` from 0 to 4 collapsed the distance between the two
+  sub-communities' centroids from 1.0 to 0.1 and introduced edge crossings that a plain layout (`layer_gravity=0`)
+  didn't have. Worth checking for before turning this on for a graph where a layer isn't known to be one
+  cohesive community.
 
 ### Aligned slice layouts
 

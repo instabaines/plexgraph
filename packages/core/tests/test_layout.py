@@ -220,3 +220,33 @@ def test_layer_gravity_never_changes_the_positions_shape():
     g, _, _ = _two_layer_path_graph()
     step = list(force_directed_layout(g, iterations=5, seed=1, layer_gravity=2.0))[-1]
     assert step.positions.shape == (g.num_nodes, 2)
+
+
+def test_layer_gravity_pulls_disconnected_sub_communities_within_one_layer_together():
+    # A known limitation, not a regression guard against a bug: one hub per LAYER, not per cluster, so a layer
+    # containing two structurally unrelated sub-communities gets them pulled toward the same point. Documents
+    # today's behavior numerically so a future per-component-hub fix has a clear before/after to compare against.
+    g = Graph()
+    layer_a = g.add_layer("a")
+    layer_b = g.add_layer("b")
+
+    def path(nodes, layer):
+        for i in range(len(nodes) - 1):
+            g.add_edge(nodes[i], nodes[i + 1], layer=layer)
+
+    a1_nodes = [g.add_node(f"a1_{i}") for i in range(6)]
+    a2_nodes = [g.add_node(f"a2_{i}") for i in range(6)]  # same layer as a1_nodes, but disconnected from it
+    b_nodes = [g.add_node(f"b_{i}") for i in range(6)]
+    path(a1_nodes, layer_a)
+    path(a2_nodes, layer_a)
+    path(b_nodes, layer_b)
+    g.add_edge(a1_nodes[0], b_nodes[0])
+    g.add_edge(a2_nodes[0], b_nodes[3])
+
+    def sub_community_distance(layer_gravity: float) -> float:
+        final = list(force_directed_layout(g, iterations=800, seed=7, layer_gravity=layer_gravity))[-1].positions
+        return np.linalg.norm(final[a1_nodes].mean(axis=0) - final[a2_nodes].mean(axis=0))
+
+    baseline = sub_community_distance(0.0)
+    with_hub = sub_community_distance(4.0)
+    assert with_hub < baseline * 0.5

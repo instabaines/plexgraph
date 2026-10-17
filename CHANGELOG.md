@@ -13,7 +13,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   particle per layer that layer members are pulled toward (and pull back -- a real mutual attraction, not a
   fixed anchor), with hubs repelling each other so distinct layers spread apart; a node in several layers
   settles between their hubs. `hub_inertia` (default 0.5) damps hub movement to curb oscillation. See "Layer-aware
-  layout" in the user guide; not yet validated on a layer with multiple disconnected sub-communities.
+  layout" in the user guide -- confirmed to make a layout worse, not better, on a layer with multiple
+  disconnected sub-communities, since one hub represents the whole layer rather than each cluster within it.
 
 ### Fixed
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
