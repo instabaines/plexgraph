@@ -2,8 +2,8 @@
 
 A practical how-to for building graphs, visualizing them, styling them, and getting data in and
 out. If you installed with `pip install plexgraph`, you're ready to go. Working *on* plexgraph itself
-(building the frontend, running the test suites) instead needs the one-time setup in the
-[repository README](https://github.com/instabaines/plexgraph/blob/develop/README.md#quick-start).
+(building the frontend, running the test suites) instead needs the one-time setup in
+[CONTRIBUTING.md](https://github.com/instabaines/plexgraph/blob/develop/CONTRIBUTING.md).
 Either way, this guide assumes `from plexgraph_bridge import show` / `from plexgraph_core
 import Graph` work in your shell or notebook.
 
