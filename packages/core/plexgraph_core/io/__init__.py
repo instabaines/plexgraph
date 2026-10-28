@@ -1,4 +1,5 @@
 from plexgraph_core.io.attributes import read_node_attributes, read_pandas_node_attributes
+from plexgraph_core.io.dot import read_dot
 from plexgraph_core.io.edgelist import (
     from_edgelist,
     from_pandas_edgelist,
@@ -32,4 +33,5 @@ __all__ = [
     "read_gml",
     "read_gexf",
     "read_graphml",
+    "read_dot",
 ]

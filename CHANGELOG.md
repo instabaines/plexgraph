@@ -91,6 +91,24 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   limitation. A `<data>` element holding XML content rather than a plain value (e.g. a yFiles
   `<y:ShapeNode>` sub-schema) is skipped rather than mis-parsed. Cross-validated against a real GraphML
   file written by networkx. See "Reading GraphML files" in the user guide.
+- **`read_dot()`**: a native DOT (the Graphviz language) reader -- no dependency, including no networkx.
+  DOT's own grammar is large, so this covers a practical subset rather than the whole language: node/
+  edge statements, edge chains, multiple trailing attribute-list groups, `node`/`edge [...]`
+  default-attribute statements (applying to whatever's declared afterward in that scope, not
+  retroactively, matching the spec's own "a subgraph receives its parent's attribute settings at the
+  time of its definition" wording), and subgraphs, flattened into the main graph rather than modeled as
+  nested (the same treatment `read_graphml` gives its own hierarchical nested graphs). A node mentioned
+  more than once merges attributes; one appearing only as an edge endpoint is auto-created. Ports are
+  stripped (cosmetic only -- no topology meaning) and an HTML-like label is kept as one opaque string
+  rather than parsed as HTML. Not supported, raising a clear error rather than guessing: a subgraph used
+  as an edge endpoint (DOT's cross-product "connect every node on one side to every node on the other").
+  `strict` is accepted but not enforced; top-level assignments and `graph [...]` attribute statements are
+  parsed but discarded (pure rendering metadata). `layer_key`/`t_start_key`/`t_end_key` name a custom
+  attribute the same way `read_gml`/`read_graphml` do, since DOT has no native multiplex or temporal
+  concept of its own; unlike those formats, DOT attribute values are always plain strings, so
+  `weight_key`/`t_start_key`/`t_end_key` are coerced to `float` here, raising clearly if that fails.
+  Cross-validated against Graphviz's own canonical cluster example. See "Reading DOT files" in the user
+  guide.
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
   correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
   own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's

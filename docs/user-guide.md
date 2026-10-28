@@ -370,17 +370,18 @@ g = from_graphml("network.graphml")                                  # via netwo
 g = read_gml("network.gml")                                          # native reader, no networkx needed
 g = read_gexf("network.gexf")                                        # native reader, no networkx needed
 g = read_graphml("network.graphml")                                  # native reader, no networkx needed
+g = read_dot("network.dot")                                          # native reader, no networkx needed
 ```
 
 `from_networkx` is the highest-leverage one for everything not covered by plexgraph's own native readers:
 since networkx already reads GEXF, GraphML, Pajek, and more (and ships dozens of graph generators),
 converting *from* a networkx object reaches all of that without this project reimplementing every format
-parser. `read_gml`/`read_gexf`/`read_graphml`, by contrast, are native — no networkx, no dependency at
-all — part of a gradual move toward fewer external dependencies generally; see "Reading GML files",
-"Reading GEXF files" and "Reading GraphML files" below for what that buys you over
-`from_networkx(nx.read_gml(...))`/`from_gexf(...)`/`from_graphml(...)`. `networkx`/`pandas` are optional
-dependencies — only imported when you actually call one of the networkx-backed functions, so you don't
-need them installed otherwise.
+parser. `read_gml`/`read_gexf`/`read_graphml`/`read_dot`, by contrast, are native — no networkx, no
+dependency at all — part of a gradual move toward fewer external dependencies generally; see "Reading GML
+files", "Reading GEXF files", "Reading GraphML files" and "Reading DOT files" below for what that buys you
+over `from_networkx(nx.read_gml(...))`/`from_gexf(...)`/`from_graphml(...)`. `networkx`/`pandas` are
+optional dependencies — only imported when you actually call one of the networkx-backed functions, so you
+don't need them installed otherwise.
 
 ### Reading GML files
 
@@ -479,6 +480,38 @@ nested inside a `<node>` (GraphML's hierarchical/compound-graph feature, e.g. yE
 simply not descended into. `<hyperedge>` elements aren't read either, matching networkx's own documented
 limitation, and a `<data>` element holding XML content instead of a plain value (e.g. a yFiles
 `<y:ShapeNode>` sub-schema) is skipped rather than mis-parsed as text.
+
+### Reading DOT files
+
+`read_dot` is a native parser (no dependency, including no networkx) for DOT, the Graphviz language:
+
+```python
+from plexgraph_core import read_dot
+
+g = read_dot("network.dot")
+```
+
+DOT's own grammar is large — ports, HTML-like labels, record shapes, subgraph-as-edge-endpoint cross
+products — so `read_dot` covers the **practical subset** real files actually use, rather than the whole
+language. In scope: `digraph`/`graph` with node/edge statements, edge chains (`a -> b -> c`), multiple
+trailing `[...]` attribute groups, `node`/`edge [...]` default-attribute statements (applying to
+whatever is declared afterward in that scope, not retroactively), and subgraphs — flattened into the
+main graph (their nodes/edges/defaults merge in directly; no nested-graph concept is created, the same
+treatment `read_graphml` gives its own hierarchical nested graphs). A node mentioned more than once
+merges its attributes; one appearing only as an edge endpoint is auto-created. Ports (`node:port`) are
+stripped — they only affect where Graphviz draws an edge on a shape, not graph topology — and an
+HTML-like label (`<...>`) is kept as one opaque string rather than parsed as HTML.
+
+Not supported, raising a clear error rather than guessing: a subgraph used as an edge endpoint
+(`{a,b} -> c`), DOT's way of saying "connect every node on one side to every node on the other." The
+`strict` keyword is accepted but not enforced (duplicate edges aren't collapsed). Top-level `rankdir=LR`
+style assignments and `graph [...]` attribute statements are parsed but discarded — pure rendering
+metadata with no plexgraph representation.
+
+DOT has no native multiplex or temporal concept — `layer_key`/`t_start_key`/`t_end_key` name a custom
+attribute the same way `read_gml`/`read_graphml` do. Unlike those formats, DOT attribute values are
+always plain strings (no type system of its own); `weight_key`/`t_start_key`/`t_end_key` are coerced to
+`float` here, raising clearly if that fails.
 
 ### Plain edge-list files with properties
 
