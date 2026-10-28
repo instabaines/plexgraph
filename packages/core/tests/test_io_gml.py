@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from plexgraph_core.io.gml import GMLParseError, read_gml
@@ -238,7 +240,10 @@ def test_unrecognized_character_raises_with_a_line_number(tmp_path):
 def test_error_message_includes_the_file_path(tmp_path):
     f = tmp_path / "g.gml"
     f.write_text("not valid gml [[[")
-    with pytest.raises(GMLParseError, match=str(f)):
+    # match= is a regex, and a Windows path's backslashes are regex metacharacters (a literal "\U"
+    # is an invalid escape there) -- re.escape it, since this test wants an exact substring match,
+    # not to use the path as a pattern.
+    with pytest.raises(GMLParseError, match=re.escape(str(f))):
         read_gml(f)
 
 
