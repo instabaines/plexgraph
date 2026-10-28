@@ -21,6 +21,7 @@ installed version and whether the viewer is bundled.
 - [Exporting](#exporting)
 - [Reading graphs from other sources](#reading-graphs-from-other-sources)
 - [Community detection](#community-detection)
+- [Centrality](#centrality)
 - [Jupyter notes](#jupyter-notes)
 - [Scale and performance](#scale-and-performance)
 - [Known limitations](#known-limitations)
@@ -466,6 +467,42 @@ This is local-moving Louvain (greedy single-node moves to convergence), not the 
 variant — matches how multislice modularity is optimized in the literature, and is simpler to implement
 correctly, at some cost in partition quality on very large graphs. Not yet wired into the viewer: there is no
 button for this yet, only the `node_color=` dict shown above.
+
+## Centrality
+
+"Who matters in this network" — two measures, both following De Domenico et al.'s standard construction for
+multilayer centrality ("Centrality in Interconnected Multilayer Networks", arXiv:1311.2906): stack every
+layer's adjacency into one combined ("supra-adjacency") structure, connect each node's copies across layers,
+and run an ordinary single-layer centrality algorithm on that one structure. Both reduce exactly to their
+textbook single-layer definition on a graph with no layers.
+
+```python
+from plexgraph_core.algorithms.centrality import eigenvector_centrality, pagerank_centrality
+
+result = eigenvector_centrality(g)          # or: pagerank_centrality(g)
+result.apply_as_node_attribute(g)            # stamps a numeric "centrality" attribute onto every node
+show(g, node_size=size_by_attribute("centrality", (6, 24)), node_color_by="centrality")
+```
+
+`eigenvector_centrality` is the graph's leading eigenvector (power iteration): a node is central if it's
+connected to other central nodes. It needs the graph (or at least the part being measured) to be connected,
+and raises on a graph with no edges at all, since the leading eigenvector is undefined there.
+`pagerank_centrality` is a damped random walk (`damping`, default 0.85, the usual value) with teleportation
+spread uniformly across *every* (node, layer) pair, not just within a layer — so, unlike community detection's
+`omega`, there's no way to make layers fully independent of each other: even with no edges at all between two
+layers, they still share a little probability mass through teleportation (a real property of the method's own
+formula, not a bug). Scores sum to 1 across every state node. PageRank honors edge direction
+(`directed=True` edges are followed one-way); eigenvector centrality treats every edge as undirected, matching
+its standard definition.
+
+Both collapse to one score per node the same way: `node_centrality()` *sums* a node's score across every
+layer it appears in (a node active in three layers accumulates three layers' worth of importance) — a
+different convention from `detect_communities`'s `node_communities()`, which picks one layer's answer by
+weight rather than adding them, since "which single community" and "how much total importance" are different
+questions. `coupling_weight` (default 1.0) sets how strongly a node's layers are tied together; 0 removes
+inter-layer coupling edges entirely (though PageRank's teleportation still crosses layers regardless, as
+above). Hyperedges aren't supported directly, same as community detection: run `bipartite_expansion(graph)`
+first.
 
 ## Where it runs
 

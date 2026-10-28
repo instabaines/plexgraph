@@ -26,8 +26,17 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   `coupling="ordinal"` (alongside the default `"categorical"`) couples each layer only to its nearest
   neighbors in declaration order instead of every pair -- temporal community detection, matching the same
   paper's own Senate roll-call-voting application (one layer per time slice, coupled only to adjacent slices).
-
-### Fixed
+- **`plexgraph_core.algorithms.centrality.eigenvector_centrality()`/`pagerank_centrality()`**: multilayer
+  centrality via the standard supra-adjacency construction (De Domenico et al., arXiv:1311.2906) -- stack
+  every layer's adjacency into one structure, connect a node's copies across layers, run the ordinary
+  single-layer algorithm on that. Both reduce exactly to their textbook definition on a graph with no layers;
+  both verified against a from-scratch dense eigendecomposition (not just another library) to double-precision
+  accuracy, including a regression test for a star graph (two dominant eigenvalues of equal magnitude, the
+  classic case where naive power iteration never converges -- fixed with a diagonal shift). Unlike
+  `detect_communities`, a node only gets one state node per layer it actually has an edge in, not an extra
+  zero-degree one for every layer -- harmless for community detection's partition, but would otherwise have
+  quietly diluted every other node's share of PageRank's teleportation probability. `result.apply_as_node_attribute(g)`
+  works the same way as community detection's. See "Centrality" in the user guide.
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
   correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
   own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's
