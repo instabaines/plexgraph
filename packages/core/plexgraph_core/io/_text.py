@@ -122,7 +122,13 @@ def read_rows(
             def numbered_rows() -> Iterator[tuple[int, list[str]]]:
                 for fields in csv.reader(text_lines(), delimiter=delimiter):
                     assert start[0] is not None
-                    yield start[0], fields
+                    # newline="" (required above for a multi-line quoted field to parse at all --
+                    # see the csv module's own docs) also means Python's usual universal-newline
+                    # translation never runs, so a \r\n or lone \r *embedded in a quoted field's
+                    # value* (not a row terminator; csv.reader already consumes those) comes through
+                    # exactly as the file's own line endings, rather than always as \n -- normalized
+                    # here so a value doesn't differ depending on what OS wrote or reads the file.
+                    yield start[0], [f.replace("\r\n", "\n").replace("\r", "\n") for f in fields]
                     start[0] = None
 
             rows = numbered_rows()
