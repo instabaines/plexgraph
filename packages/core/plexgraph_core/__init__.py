@@ -12,6 +12,7 @@ from plexgraph_core.io import (
     read_gml,
     read_graphml,
     read_node_attributes,
+    read_pajek,
     read_pandas_node_attributes,
     read_temporal_edgelist,
     to_networkx,
@@ -47,4 +48,5 @@ __all__ = [
     "read_gexf",
     "read_graphml",
     "read_dot",
+    "read_pajek",
 ]

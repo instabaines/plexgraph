@@ -11,6 +11,7 @@ from plexgraph_core.io.gexf import read_gexf
 from plexgraph_core.io.gml import read_gml
 from plexgraph_core.io.graphml import read_graphml
 from plexgraph_core.io.networkx_io import from_gexf, from_graphml, from_networkx, to_networkx, write_gexf, write_graphml
+from plexgraph_core.io.pajek import read_pajek
 from plexgraph_core.io.temporal import from_pandas_temporal_edgelist, from_temporal_edgelist, read_temporal_edgelist
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "read_gexf",
     "read_graphml",
     "read_dot",
+    "read_pajek",
 ]

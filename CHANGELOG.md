@@ -109,6 +109,21 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   `weight_key`/`t_start_key`/`t_end_key` are coerced to `float` here, raising clearly if that fails.
   Cross-validated against Graphviz's own canonical cluster example. See "Reading DOT files" in the user
   guide.
+- **`read_pajek()`**: a native Pajek `.net` reader -- no dependency, including no networkx. Unlike
+  `read_gml`/`read_graphml`/`read_dot`, this has **genuine native multiplex support**: a `.net` file can
+  hold more than one relation section (`*Arcs`/`*Edges`/`*Arcslist`/`*Edgeslist`/`*Matrix`), and when it
+  does, each one becomes its own plexgraph layer automatically -- no `layer_key` configuration needed. A
+  file with only one relation section stays a flat graph, matching every other reader's "nothing
+  configured" behavior. `*Arcs`/`*Arcslist` sections are directed, `*Edges`/`*Edgeslist` undirected, and
+  `*Matrix` always directed (even when symmetric) -- per section, overridable file-wide via `directed=`.
+  Other bundled sections (`*Partition`/`*Vector`/`*Permutation`/`*Cluster`/`*Hierarchy` -- clustering
+  results, not graph structure) are skipped gracefully, fixing a real bug in networkx's own reader: its
+  edge-reading loop has no check for a section boundary, so a second relation section or a trailing
+  `*Partition` block gets silently misread as bogus edges (confirmed directly against a real file).
+  `t_start_key`/`t_end_key` name a custom trailing attribute, the same convention `read_gml` uses, since
+  Pajek has no native temporal concept; there's no `weight_key`, since an edge/arc line's weight is a
+  fixed position, not a named attribute, and is always read directly. Cross-validated against a real
+  `.net` file written by networkx. See "Reading Pajek files" in the user guide.
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
   correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
   own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's

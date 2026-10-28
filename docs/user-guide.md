@@ -371,17 +371,21 @@ g = read_gml("network.gml")                                          # native re
 g = read_gexf("network.gexf")                                        # native reader, no networkx needed
 g = read_graphml("network.graphml")                                  # native reader, no networkx needed
 g = read_dot("network.dot")                                          # native reader, no networkx needed
+g = read_pajek("network.net")                                        # native reader, no networkx needed
 ```
 
 `from_networkx` is the highest-leverage one for everything not covered by plexgraph's own native readers:
 since networkx already reads GEXF, GraphML, Pajek, and more (and ships dozens of graph generators),
 converting *from* a networkx object reaches all of that without this project reimplementing every format
-parser. `read_gml`/`read_gexf`/`read_graphml`/`read_dot`, by contrast, are native — no networkx, no
-dependency at all — part of a gradual move toward fewer external dependencies generally; see "Reading GML
-files", "Reading GEXF files", "Reading GraphML files" and "Reading DOT files" below for what that buys you
-over `from_networkx(nx.read_gml(...))`/`from_gexf(...)`/`from_graphml(...)`. `networkx`/`pandas` are
-optional dependencies — only imported when you actually call one of the networkx-backed functions, so you
-don't need them installed otherwise.
+parser. `read_gml`/`read_gexf`/`read_graphml`/`read_dot`/`read_pajek`, by contrast, are native — no
+networkx, no dependency at all — part of a gradual move toward fewer external dependencies generally; see
+"Reading GML files", "Reading GEXF files", "Reading GraphML files", "Reading DOT files" and "Reading Pajek
+files" below for what that buys you over `from_networkx(nx.read_gml(...))`/`from_gexf(...)`/
+`from_graphml(...)`. `read_pajek` is a genuine improvement over `nx.read_pajek`, not just a dependency-free
+alternative: networkx's own Pajek reader has no check for a section boundary inside its edge-reading loop,
+so a file with more than one relation section (or any trailing `*Partition`/`*Vector`/etc. block) gets
+silently misparsed into bogus edges. `networkx`/`pandas` are optional dependencies — only imported when
+you actually call one of the networkx-backed functions, so you don't need them installed otherwise.
 
 ### Reading GML files
 
@@ -512,6 +516,40 @@ DOT has no native multiplex or temporal concept — `layer_key`/`t_start_key`/`t
 attribute the same way `read_gml`/`read_graphml` do. Unlike those formats, DOT attribute values are
 always plain strings (no type system of its own); `weight_key`/`t_start_key`/`t_end_key` are coerced to
 `float` here, raising clearly if that fails.
+
+### Reading Pajek files
+
+`read_pajek` is a native parser (no dependency, including no networkx) for Pajek's `.net` format:
+
+```python
+from plexgraph_core import read_pajek
+
+g = read_pajek("network.net")
+```
+
+Unlike GML/GraphML/DOT, Pajek has **genuine native multiplex support** — no `layer_key` needed. A
+`.net` file can hold more than one relation section (`*Arcs`/`*Edges`/`*Arcslist`/`*Edgeslist`/
+`*Matrix`), and when it does, `read_pajek` turns each one into its own plexgraph layer automatically,
+named from a quoted label on the section's header line if present (`*Arcs "friendship"`) or an
+auto-numbered index otherwise. A file with only one relation section (the common case) stays a flat
+graph with no layer, matching every other reader's "nothing configured" behavior. `*Arcs`/`*Arcslist`
+sections are directed, `*Edges`/`*Edgeslist` are undirected, and `*Matrix` is always directed — even
+when the matrix looks symmetric — all per-section rather than one file-wide flag, though `directed=`
+still overrides every section uniformly if you pass it. `*Arcslist`/`*Edgeslist` are Pajek's
+adjacency-list form and never carry weights; `*Matrix`'s nonzero entries become weighted edges.
+
+Other sections Pajek files often bundle in (`*Partition`, `*Vector`, `*Permutation`, `*Cluster`,
+`*Hierarchy` — clustering/partition results, not graph structure) are skipped gracefully. This is more
+than cosmetic: networkx's own Pajek reader has no check for a section boundary inside its edge-reading
+loop, so a second relation section or a trailing `*Partition` block gets silently misread as bogus
+edges (confirmed directly — `nx.read_pajek` on a file with `*Arcs`/`*Edges`/`*Partition` in sequence
+produces edges like `('*Edges', 'coworker')` and `('*Partition', 'clustering')`).
+
+A node's plexgraph key is its Pajek vertex id by default; `label_as_key=True` uses its label instead.
+Pajek has no native temporal concept, so `t_start_key`/`t_end_key` name a custom trailing attribute the
+same way `read_gml` does. There's no `weight_key` here, unlike the other native readers: an edge/arc
+line's optional weight is a fixed *position* (the column right after source/target), not a named
+attribute, so it's always read directly when present and numeric.
 
 ### Plain edge-list files with properties
 
