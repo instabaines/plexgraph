@@ -65,6 +65,16 @@ class CommunityResult:
             for node_id, counts in weight_by_node.items()
         }
 
+    def apply_as_node_attribute(self, graph: Graph, *, attribute: str = "community") -> None:
+        """Stamp `node_communities()` onto `graph` as a node attribute, in place -- so
+        `show(g, node_color_by="community")` (or `by_attribute("community")`) picks it up directly
+        through the existing attribute-coloring machinery, with no viewer changes needed: a
+        legend, categorical colors, and attribute-based filtering all come for free. Values are
+        stored as strings (`"0"`, `"1"`, ...) so they are always treated as categories, never
+        mistaken for a continuous number to run through a colormap."""
+        for node_id, community in self.node_communities().items():
+            graph.set_node_attrs(node_id, **{attribute: str(community)})
+
 
 def detect_communities(
     graph: Graph,

@@ -188,3 +188,20 @@ def test_node_communities_collapses_by_degree_weight():
     strong_community = communities[strong_side[0]]
     assert all(communities[n] == strong_community for n in strong_side)
     assert communities[shared] == strong_community
+
+
+def test_apply_as_node_attribute_stamps_string_values_matching_node_communities():
+    g, a, b = _two_cliques()
+    result = detect_communities(g, seed=0)
+    expected = result.node_communities()
+    result.apply_as_node_attribute(g)
+    for n in a + b:
+        assert g.node(n).attrs["community"] == str(expected[n])
+
+
+def test_apply_as_node_attribute_uses_a_custom_attribute_name():
+    g, a, b = _two_cliques()
+    result = detect_communities(g, seed=0)
+    result.apply_as_node_attribute(g, attribute="cluster")
+    assert "cluster" in g.node(a[0]).attrs
+    assert "community" not in g.node(a[0]).attrs

@@ -432,11 +432,9 @@ ordinary single-layer modularity to multiplex and temporal networks:
 from plexgraph_core.algorithms.community import detect_communities
 
 result = detect_communities(g)
-communities = result.node_communities()          # {node_id: community_id}, one per node
 result.modularity                                 # how good the partition is (roughly -0.5 to 1; higher is better)
-
-# node_color= matches on the graph's own node keys, not internal ids, so translate:
-show(g, node_color={g.node(n).key: c for n, c in communities.items()})
+result.apply_as_node_attribute(g)                  # stamps a "community" attribute onto every node, in place
+show(g, node_color_by="community")                 # colors, legend and filtering all come from the usual attribute machinery
 ```
 
 On a graph with no layers this is exactly ordinary Louvain community detection — one community per node. On a

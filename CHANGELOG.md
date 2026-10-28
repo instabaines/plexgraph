@@ -19,8 +19,10 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   ("multislice") modularity maximization (Mucha, Richardson, Macon, Porter & Onnela, *Science* 2010), the
   standard extension of modularity to multiplex and temporal networks. A graph with no layers is exactly
   ordinary single-layer Louvain; on a multiplex graph a node's community can differ per layer, with `omega`
-  controlling how strongly its layers are pulled toward agreement. See "Community detection" in the user
-  guide -- not yet wired into the viewer, only available from Python.
+  controlling how strongly its layers are pulled toward agreement. `result.apply_as_node_attribute(g)` stamps
+  the partition onto the graph as a node attribute, so `show(g, node_color_by="community")` colors, legends
+  and filters it through the viewer's existing attribute machinery -- no viewer changes needed. See "Community
+  detection" in the user guide; there is still no dedicated "detect communities" button in the viewer itself.
 
 ### Fixed
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
