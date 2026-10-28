@@ -369,16 +369,18 @@ g = from_gexf("network.gexf")                                        # via netwo
 g = from_graphml("network.graphml")                                  # via networkx's reader
 g = read_gml("network.gml")                                          # native reader, no networkx needed
 g = read_gexf("network.gexf")                                        # native reader, no networkx needed
+g = read_graphml("network.graphml")                                  # native reader, no networkx needed
 ```
 
 `from_networkx` is the highest-leverage one for everything not covered by plexgraph's own native readers:
 since networkx already reads GEXF, GraphML, Pajek, and more (and ships dozens of graph generators),
 converting *from* a networkx object reaches all of that without this project reimplementing every format
-parser. `read_gml`/`read_gexf`, by contrast, are native — no networkx, no dependency at all — part of a
-gradual move toward fewer external dependencies generally; see "Reading GML files" and "Reading GEXF
-files" below for what that buys you over `from_networkx(nx.read_gml(...))`/`from_gexf(...)`. `networkx`/
-`pandas` are optional dependencies — only imported when you actually call one of the networkx-backed
-functions, so you don't need them installed otherwise.
+parser. `read_gml`/`read_gexf`/`read_graphml`, by contrast, are native — no networkx, no dependency at
+all — part of a gradual move toward fewer external dependencies generally; see "Reading GML files",
+"Reading GEXF files" and "Reading GraphML files" below for what that buys you over
+`from_networkx(nx.read_gml(...))`/`from_gexf(...)`/`from_graphml(...)`. `networkx`/`pandas` are optional
+dependencies — only imported when you actually call one of the networkx-backed functions, so you don't
+need them installed otherwise.
 
 ### Reading GML files
 
@@ -442,6 +444,41 @@ Not read: node-level dynamics (a node's own `start`/`end`/`<spells>` — plexgra
 dimension, only connectors do) and dynamic attribute values (an `<attvalue>` that itself changes over
 time via its own `start`/`end` — plexgraph attributes aren't time-varying). Both are real GEXF features;
 this reader just doesn't reach for them yet.
+
+### Reading GraphML files
+
+`read_graphml` is a native parser (no dependency, including no networkx) for GraphML, the XML format
+used by yEd, Gephi, Cytoscape and many others:
+
+```python
+from plexgraph_core import read_graphml
+
+g = read_graphml("network.graphml")
+```
+
+GraphML has no native multiplex or temporal concept at all — no equivalent of GML's common
+`layer`-style attributes and nothing like GEXF's `<spells>` — so, as with `read_gml`, you name which
+declared key holds that information:
+
+```python
+g = read_graphml("network.graphml", layer_key="relation", t_start_key="start", t_end_key="end")
+```
+
+A node's plexgraph key is its GraphML `id` by default; `label_as_key=True` uses whichever key's
+`attr.name` is `"label"` instead, if every node has one and they're all distinct. GraphML also has no
+first-class `weight` XML attribute (GEXF does) — `weight_key` (default `"weight"`) names the declared
+key read as plexgraph's `weight`. Every other declared key is kept as a plain attribute, coerced to its
+declared type (boolean/int/long/float/double/string). A `<graph edgedefault="directed"|"undirected">`
+sets the file's default direction; an individual `<edge directed="true"|"false">` still overrides that.
+
+A GraphML document may legally contain more than one top-level `<graph>` element — only the first is
+read here, matching `networkx.read_graphml`'s own behavior, rather than treating the others as
+plexgraph layers: there's no real-world convention for using them that way (unlike GEXF's `<spells>`),
+so inventing one would be guessing, not reading what the format means. For the same reason, a `<graph>`
+nested inside a `<node>` (GraphML's hierarchical/compound-graph feature, e.g. yEd folder groups) is
+simply not descended into. `<hyperedge>` elements aren't read either, matching networkx's own documented
+limitation, and a `<data>` element holding XML content instead of a plain value (e.g. a yFiles
+`<y:ShapeNode>` sub-schema) is skipped rather than mis-parsed as text.
 
 ### Plain edge-list files with properties
 

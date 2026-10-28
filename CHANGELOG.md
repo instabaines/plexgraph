@@ -74,6 +74,23 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   there is no `layer_key` here. Node-level dynamics and dynamic (time-varying) attribute values are not
   read -- plexgraph's `Node`/attribute model has no time dimension of its own yet. Cross-validated against
   a real GEXF file written by networkx. See "Reading GEXF files" in the user guide.
+- **`read_graphml()`**: a native GraphML reader -- no dependency, including no networkx, built on the
+  standard library's `xml.etree.ElementTree`. GraphML has no native multiplex or temporal concept at all
+  (no equivalent of GML's common `layer`-style attributes, nothing like GEXF's `<spells>`), so
+  `layer_key=`/`t_start_key=`/`t_end_key=` name a declared key to read as plexgraph's layer/t_start/
+  t_end, the same convention `read_gml` already uses. `weight_key` (default `"weight"`) does the same
+  for `weight`, since GraphML -- unlike GEXF -- has no first-class `weight` XML attribute either. A
+  `<graph edgedefault=...>` sets the file's default direction, overridable per-edge via its own
+  `directed=` attribute. `<key>` declarations are read for type coercion (boolean/int/long/float/double/
+  string) and defaults, with a `for="all"` key visible to both nodes and edges; a `<data>` referencing an
+  undeclared key raises. A GraphML document may legally hold more than one top-level `<graph>` element --
+  only the first is read, matching `networkx.read_graphml`'s own behavior, rather than guessing that the
+  others are meant as layers (there's no real-world convention for that, unlike GEXF's `<spells>`). Also
+  out of scope, for the same reason: `<graph>` nested inside a `<node>` (hierarchical/compound graphs,
+  e.g. yEd folder groups) and `<hyperedge>` elements, the latter matching networkx's own documented
+  limitation. A `<data>` element holding XML content rather than a plain value (e.g. a yFiles
+  `<y:ShapeNode>` sub-schema) is skipped rather than mis-parsed. Cross-validated against a real GraphML
+  file written by networkx. See "Reading GraphML files" in the user guide.
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
   correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
   own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's
