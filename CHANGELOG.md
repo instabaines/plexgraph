@@ -15,6 +15,12 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   settles between their hubs. `hub_inertia` (default 0.5) damps hub movement to curb oscillation. See "Layer-aware
   layout" in the user guide -- confirmed to make a layout worse, not better, on a layer with multiple
   disconnected sub-communities, since one hub represents the whole layer rather than each cluster within it.
+- **`plexgraph_core.algorithms.community.detect_communities()`**: community detection via generalized
+  ("multislice") modularity maximization (Mucha, Richardson, Macon, Porter & Onnela, *Science* 2010), the
+  standard extension of modularity to multiplex and temporal networks. A graph with no layers is exactly
+  ordinary single-layer Louvain; on a multiplex graph a node's community can differ per layer, with `omega`
+  controlling how strongly its layers are pulled toward agreement. See "Community detection" in the user
+  guide -- not yet wired into the viewer, only available from Python.
 
 ### Fixed
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered

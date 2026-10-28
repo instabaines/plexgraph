@@ -20,6 +20,7 @@ installed version and whether the viewer is bundled.
 - [Interacting with the viewer](#interacting-with-the-viewer)
 - [Exporting](#exporting)
 - [Reading graphs from other sources](#reading-graphs-from-other-sources)
+- [Community detection](#community-detection)
 - [Jupyter notes](#jupyter-notes)
 - [Scale and performance](#scale-and-performance)
 - [Known limitations](#known-limitations)
@@ -421,6 +422,43 @@ write_gexf(g, "out.gexf")                # via networkx
 None of these plain-edge formats can represent a hyperedge (more than two endpoints) — networkx has the same
 limitation — so hyperedges are skipped with a `UserWarning` rather than silently dropped or raising.
 
+## Community detection
+
+`detect_communities(graph)` finds groups of densely-connected nodes by maximizing generalized ("multislice")
+modularity (Mucha, Richardson, Macon, Porter & Onnela, *Science* 328:876-878, 2010) — the standard extension of
+ordinary single-layer modularity to multiplex and temporal networks:
+
+```python
+from plexgraph_core.algorithms.community import detect_communities
+
+result = detect_communities(g)
+communities = result.node_communities()          # {node_id: community_id}, one per node
+result.modularity                                 # how good the partition is (roughly -0.5 to 1; higher is better)
+
+# node_color= matches on the graph's own node keys, not internal ids, so translate:
+show(g, node_color={g.node(n).key: c for n, c in communities.items()})
+```
+
+On a graph with no layers this is exactly ordinary Louvain community detection — one community per node. On a
+multiplex graph, every `(node, layer)` pair is treated as its own "state node": a community can differ for the
+same node across layers (a real, literature-documented property of this method, not a bug), and `omega`
+controls how strongly a node's layers are pulled toward agreeing (`omega=0` detects each layer's communities
+completely independently; higher values increasingly force a node's communities to match across the layers it
+appears in). `result.state_communities` has the full per-layer partition if you want it; `node_communities()`
+collapses it to one community per node, by whichever community holds the most of that node's total edge weight.
+`resolution` (gamma) is the usual modularity resolution parameter: above 1 finds more, smaller communities;
+below 1 finds fewer, larger ones.
+
+This only understands plain and multilayer edges — hyperedges aren't modularity-native, so `detect_communities`
+raises if the graph has any; run `bipartite_expansion(graph)` first (`from
+plexgraph_core.algorithms.hypergraph import bipartite_expansion`), which turns each hyperedge into a synthetic
+node connected to its members, itself eligible for its own community like any other node.
+
+This is local-moving Louvain (greedy single-node moves to convergence), not the multilevel/hierarchical
+variant — matches how multislice modularity is optimized in the literature, and is simpler to implement
+correctly, at some cost in partition quality on very large graphs. Not yet wired into the viewer: there is no
+button for this yet, only the `node_color=` dict shown above.
+
 ## Where it runs
 
 In a notebook, with [anywidget](https://anywidget.dev/) installed (`pip install "plexgraph[jupyter]"`), `show()` displays
@@ -592,9 +630,11 @@ viewer.setHighlightedNodes([a, b]);
 viewer.zoomBy(1.5);
 ```
 
-Not yet available: choosing a layout algorithm from the viewer, collapsing communities, and pinning
-nodes. Individual nodes cannot be clicked in the density overview (above 5,000 visible nodes); filter
-or search down to a subset first.
+Not yet available in the viewer: choosing a layout algorithm, collapsing communities visually, and
+pinning nodes. Individual nodes cannot be clicked in the density overview (above 5,000 visible nodes);
+filter or search down to a subset first. Community *detection* itself is available from Python --
+see [Community detection](#community-detection) -- it just isn't wired into the viewer's filter/color
+controls yet; color a graph by `node_color=communities` (see below) to see it today.
 
 ### Closing notebook sessions
 
