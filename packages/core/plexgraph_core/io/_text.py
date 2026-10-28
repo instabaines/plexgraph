@@ -7,6 +7,7 @@ loader/exporter in this package. Not part of the public API.
 
 from __future__ import annotations
 
+import csv
 import warnings
 from pathlib import Path
 from typing import Any, Hashable, Iterable, Iterator, Sequence
@@ -81,21 +82,58 @@ def read_rows(
 ) -> Iterator[tuple[list[str], int]]:
     """Yield (fields, line_number) for every data line of a delimited text file: comment and blank lines skipped,
     the first data line skipped too if header=True, 1-indexed line numbers as in the file (so a caller can report
-    exactly where a bad row came from). delimiter=None splits on any whitespace; an explicit delimiter (e.g. "," or
-    "\\t") only strips the line ending, since a trailing empty field ("a,b,") is then a real, empty column.
+    exactly where a bad row came from). delimiter=None splits on any whitespace -- no quoting rules apply, since a
+    real quoted field is exactly how you'd put whitespace inside a value in the first place, so there is no
+    ambiguity to resolve. An explicit delimiter (e.g. "," or "\\t") is read as real CSV: a comma or tab inside a
+    "quoted field" is part of the value, not a column break, and a doubled quote ("") inside one is a literal
+    quote character -- the standard CSV quoting rules (RFC 4180), via the stdlib `csv` module rather than a plain
+    str.split(), which would silently mis-split exactly this kind of field. Must be a single character; csv.reader
+    itself enforces that. A trailing empty field ("a,b,") is a real, empty column either way.
     """
+    if delimiter is not None and len(delimiter) != 1:
+        raise ValueError(f"delimiter must be a single character for a real CSV-style delimiter, got {delimiter!r}")
     skipped_header = not header
     # utf-8-sig: a file saved by Excel starts with a byte-order mark, which would otherwise become part of the
-    # first name.
-    with open(path, encoding="utf-8-sig") as fh:
-        for number, raw in enumerate(fh, 1):
-            line = raw.rstrip("\r\n") if delimiter else raw.strip()
-            if not line.strip() or (comments and line.lstrip().startswith(comments)):
+    # first name. newline="": required by the csv module so it -- not universal-newline translation -- controls
+    # line endings, including a newline embedded inside a quoted field.
+    with open(path, encoding="utf-8-sig", newline="" if delimiter else None) as fh:
+        # Comment/blank detection happens on the raw line, before any CSV unquoting -- a comment marker is a
+        # line-level convention, not a field value, so a quoted field that happens to start with the marker
+        # (e.g. a node literally named "#1") must not be mistaken for one.
+        def kept_lines() -> Iterator[tuple[int, str]]:
+            for number, raw in enumerate(fh, 1):
+                if raw.strip() and not (comments and raw.lstrip().startswith(comments)):
+                    yield number, raw
+
+        if delimiter is None:
+            rows: Iterable[tuple[int, list[str]]] = ((number, raw.split()) for number, raw in kept_lines())
+        else:
+            # csv.reader may consume more than one kept line per row it returns (a multi-line quoted field);
+            # `start` tracks the first raw line that went into the row currently being assembled, so a reported
+            # line number is still the row's true start even then.
+            start: list[int | None] = [None]
+
+            def text_lines() -> Iterator[str]:
+                for number, raw in kept_lines():
+                    if start[0] is None:
+                        start[0] = number
+                    yield raw
+
+            def numbered_rows() -> Iterator[tuple[int, list[str]]]:
+                for fields in csv.reader(text_lines(), delimiter=delimiter):
+                    assert start[0] is not None
+                    yield start[0], fields
+                    start[0] = None
+
+            rows = numbered_rows()
+        for number, fields in rows:
+            stripped = [f.strip() for f in fields]
+            if not any(stripped):
                 continue
             if not skipped_header:
                 skipped_header = True
                 continue
-            yield [p.strip() for p in (line.split(delimiter) if delimiter else line.split())], number
+            yield stripped, number
 
 
 def read_header(path: str | Path, *, delimiter: str | None, comments: str | None) -> list[str] | None:

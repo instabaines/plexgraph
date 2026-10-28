@@ -391,6 +391,11 @@ show(g, edge_color=by_attribute("kind", palette="tab10"), edge_width=size_by_wei
 
 Delimiter, `comments`, a `header` row (auto-detects column names when `attrs` is left out and there is a header),
 custom `columns=(source_col, target_col)`, and `directed=True` are all supported, matching `read_temporal_edgelist`.
+`delimiter=None` (the default) splits on whitespace; an explicit single-character delimiter (`","`, `"\t"`, ...) is
+read as real CSV (RFC 4180): a comma inside a `"quoted field"` doesn't split the column, a doubled `""` inside one
+is a literal quote, and a quoted field can even span multiple lines. This also means a comment line is detected
+from the raw line, not a field's unquoted value, so a node legitimately named `"#1"` in quotes is never mistaken
+for a `#`-prefixed comment.
 
 ### Node attributes from a separate table
 

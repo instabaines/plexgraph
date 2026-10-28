@@ -58,6 +58,15 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   against the widget -- just not guaranteed to succeed within their timeout); their docstrings and the user guide
   now say so.
 
+### Fixed
+- `read_edgelist`/`read_temporal_edgelist`/`read_node_attributes` with an explicit delimiter (`","`, `"\t"`) split
+  rows with plain `str.split()`, not real CSV parsing -- a quoted field containing the delimiter (`"Smith,
+  John",...`) was silently mis-split into extra columns instead of read as one value. Now parsed with the
+  standard library's `csv` module (no new dependency): proper quoting, doubled-quote escaping, and multi-line
+  quoted fields all work, and comment-line detection still looks at the raw line rather than an unquoted field
+  value, so a node legitimately named `"#1"` is never mistaken for a comment. A multi-character delimiter, which
+  used to silently "work" via `str.split()` but can't be expressed as real CSV, now raises a clear error instead.
+
 ## [0.3.0]
 
 ### Added

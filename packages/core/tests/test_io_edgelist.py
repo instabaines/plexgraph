@@ -459,3 +459,36 @@ def test_read_edgelist_the_true_int64_minimum_becomes_an_int(tmp_path):
     f.write_text(f"a {-(2**63)}\n")
     g = read_edgelist(f)
     assert g.node(-(2**63)) is not None
+
+
+# ---- a delimited file is read as real CSV, not str.split(): quoting rules apply ------------------------------
+
+
+def test_read_edgelist_a_quoted_field_can_contain_the_delimiter(tmp_path):
+    f = tmp_path / "e.csv"
+    f.write_text('"Smith, John","Doe, Jane",1.5\n')
+    g = read_edgelist(f, delimiter=",", attrs={"weight": 2})
+    assert {n.key for n in g.nodes()} == {"Smith, John", "Doe, Jane"}
+    assert g.connector(0).weight == 1.5
+
+
+def test_read_edgelist_a_quoted_field_can_span_multiple_lines(tmp_path):
+    f = tmp_path / "e.csv"
+    f.write_text('a,b,"line one\nline two"\nc,d,single\n')
+    g = read_edgelist(f, delimiter=",", attrs={"note": 2})
+    assert g.connector(0).attrs["note"] == "line one\nline two"
+    assert g.connector(1).attrs["note"] == "single"
+
+
+def test_read_edgelist_a_quoted_field_starting_with_the_comment_marker_is_not_a_comment(tmp_path):
+    f = tmp_path / "e.csv"
+    f.write_text('"#1",bob\n')
+    g = read_edgelist(f, delimiter=",", comments="#")
+    assert g.node("#1") is not None  # the comment check looks at the raw line, not the unquoted field value
+
+
+def test_read_edgelist_a_multi_character_delimiter_raises_clearly(tmp_path):
+    f = tmp_path / "e.txt"
+    f.write_text("a::b\n")
+    with pytest.raises(ValueError, match="single character"):
+        read_edgelist(f, delimiter="::")
