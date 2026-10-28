@@ -60,6 +60,20 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   no native concept of either (it predates multilayer/temporal network research). Cross-validated against a
   real GML file written by networkx (not just hand-constructed examples): identical node/edge counts,
   identical edge set, attributes preserved. See "Reading GML files" in the user guide.
+- **`read_gexf()`**: a native GEXF (Graph Exchange XML Format) reader -- no dependency, including no
+  networkx, built on the standard library's `xml.etree.ElementTree`. Unlike GML, GEXF has genuine native
+  support for time-varying structure via `<spells>`: a node or edge may exist over several disjoint time
+  intervals rather than just one. Each spell becomes its own connector sharing the same endpoints --
+  parallel connectors between the same node pair are already native to this IR (the same mechanism a
+  multigraph uses), so no model change was needed. A plain `start`/`end` on an edge (no `<spells>`) is the
+  one-spell case. Edge `weight` is read directly (a first-class GEXF XML attribute, unlike GML's
+  configurable `weight_key`); direction follows the file's own `defaultedgetype`, overridable with
+  `directed=`, with a per-edge `type=` (including `"mutual"`, read as two directed connectors) always
+  taking precedence either way. `<attributes>` declarations are read for type coercion and defaults; an
+  `<attvalue>` referencing an undeclared attribute raises. GEXF has no native multiplex/layer concept, so
+  there is no `layer_key` here. Node-level dynamics and dynamic (time-varying) attribute values are not
+  read -- plexgraph's `Node`/attribute model has no time dimension of its own yet. Cross-validated against
+  a real GEXF file written by networkx. See "Reading GEXF files" in the user guide.
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
   correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
   own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's

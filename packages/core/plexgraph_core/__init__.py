@@ -7,6 +7,7 @@ from plexgraph_core.io import (
     from_pandas_temporal_edgelist,
     from_temporal_edgelist,
     read_edgelist,
+    read_gexf,
     read_gml,
     read_node_attributes,
     read_pandas_node_attributes,
@@ -41,4 +42,5 @@ __all__ = [
     "write_gexf",
     "write_graphml",
     "read_gml",
+    "read_gexf",
 ]

@@ -368,15 +368,17 @@ g = from_networkx(nx_graph)                                         # any networ
 g = from_gexf("network.gexf")                                        # via networkx's reader
 g = from_graphml("network.graphml")                                  # via networkx's reader
 g = read_gml("network.gml")                                          # native reader, no networkx needed
+g = read_gexf("network.gexf")                                        # native reader, no networkx needed
 ```
 
 `from_networkx` is the highest-leverage one for everything not covered by plexgraph's own native readers:
 since networkx already reads GEXF, GraphML, Pajek, and more (and ships dozens of graph generators),
 converting *from* a networkx object reaches all of that without this project reimplementing every format
-parser. `read_gml`, by contrast, is native — no networkx, no dependency at all — part of a gradual move
-toward fewer external dependencies generally; see "Reading GML files" below for what that buys you over
-`from_networkx(nx.read_gml(...))`. `networkx`/`pandas` are optional dependencies — only imported when you
-actually call one of the networkx-backed functions, so you don't need them installed otherwise.
+parser. `read_gml`/`read_gexf`, by contrast, are native — no networkx, no dependency at all — part of a
+gradual move toward fewer external dependencies generally; see "Reading GML files" and "Reading GEXF
+files" below for what that buys you over `from_networkx(nx.read_gml(...))`/`from_gexf(...)`. `networkx`/
+`pandas` are optional dependencies — only imported when you actually call one of the networkx-backed
+functions, so you don't need them installed otherwise.
 
 ### Reading GML files
 
@@ -410,6 +412,36 @@ escaping, the spec's own way, and `\"`-style backslash escaping, which at least 
 writes instead), a quoted value may contain a literal newline, and `_` is accepted in attribute names even
 though the formal grammar is letters-and-digits only — the same leniency philosophy igraph's own GML
 reader uses, since many files already deviate from the strict spec in exactly these ways.
+
+### Reading GEXF files
+
+`read_gexf` is a native parser (no dependency, including no networkx) for GEXF (Graph Exchange XML
+Format), the XML format used by Gephi and others:
+
+```python
+from plexgraph_core import read_gexf
+
+g = read_gexf("network.gexf")
+```
+
+Unlike GML, GEXF has genuine native support for time-varying structure, via `<spells>`: a node or edge
+can exist over several disjoint time intervals, not just one. `read_gexf` reads each spell as its own
+connector sharing the same endpoints — this IR already allows parallel connectors between the same pair
+of nodes (the same thing a multigraph produces), so a 3-spell edge just becomes 3 connectors. A plain
+`start`/`end` on an edge (no `<spells>` block) is the one-spell case. GEXF has no multiplex/layer concept
+of its own, so there's no `layer_key` here the way there is for `read_gml`/`read_edgelist`.
+
+Edge `weight` is read directly (GEXF makes it a first-class XML attribute, not a custom column like
+GML's `weight_key`). Direction follows the file's own `defaultedgetype` (undirected if the file doesn't
+say); `directed=True`/`False` overrides that default, though an edge with its own `type=` attribute
+still wins either way — including `type="mutual"`, GEXF's shorthand for "both directions," read as two
+directed connectors. As with `read_gml`, a node's plexgraph key is its GEXF `id` by default;
+`label_as_key=True` switches to `label`.
+
+Not read: node-level dynamics (a node's own `start`/`end`/`<spells>` — plexgraph nodes have no time
+dimension, only connectors do) and dynamic attribute values (an `<attvalue>` that itself changes over
+time via its own `start`/`end` — plexgraph attributes aren't time-varying). Both are real GEXF features;
+this reader just doesn't reach for them yet.
 
 ### Plain edge-list files with properties
 
