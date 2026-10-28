@@ -49,6 +49,7 @@ from plexgraph_core import (
     from_pandas_temporal_edgelist,
     from_temporal_edgelist,
     read_edgelist,
+    read_gml,
     read_node_attributes,
     read_pandas_node_attributes,
     read_temporal_edgelist,
@@ -78,7 +79,7 @@ __all__ = [
     "Graph", "Node", "Connector", "Layer",
     # loading data
     "from_edgelist", "read_edgelist", "from_pandas_edgelist", "from_networkx", "from_gexf", "from_graphml",
-    "from_temporal_edgelist", "from_pandas_temporal_edgelist", "read_temporal_edgelist",
+    "from_temporal_edgelist", "from_pandas_temporal_edgelist", "read_temporal_edgelist", "read_gml",
     "read_node_attributes", "read_pandas_node_attributes",
     # saving data
     "to_pandas_edgelist", "write_edgelist", "to_networkx", "write_gexf", "write_graphml",

@@ -360,20 +360,56 @@ reliably over both routes. See "Known limitations" below.
 ## Reading graphs from other sources
 
 ```python
-from plexgraph_core import from_edgelist, from_pandas_edgelist, from_networkx, from_gexf, from_graphml
+from plexgraph_core import from_edgelist, from_pandas_edgelist, from_networkx, from_gexf, from_graphml, read_gml
 
 g = from_edgelist([("a", "b"), ("b", "c", 2.5)])                   # (u, v) or (u, v, weight) or (u, v, attrs_dict)
 g = from_pandas_edgelist(df, source="src", target="dst", edge_attr=True)
 g = from_networkx(nx_graph)                                         # any networkx Graph/DiGraph/MultiGraph/MultiDiGraph
 g = from_gexf("network.gexf")                                        # via networkx's reader
 g = from_graphml("network.graphml")                                  # via networkx's reader
+g = read_gml("network.gml")                                          # native reader, no networkx needed
 ```
 
-`from_networkx` is the highest-leverage one: since networkx already reads GEXF, GraphML, GML,
-Pajek, and more (and ships dozens of graph generators), converting *from* a networkx object reaches
-all of that without this project reimplementing any format parser. `networkx`/`pandas` are optional
-dependencies — only imported when you actually call one of these functions, so you don't need them
-installed otherwise.
+`from_networkx` is the highest-leverage one for everything not covered by plexgraph's own native readers:
+since networkx already reads GEXF, GraphML, Pajek, and more (and ships dozens of graph generators),
+converting *from* a networkx object reaches all of that without this project reimplementing every format
+parser. `read_gml`, by contrast, is native — no networkx, no dependency at all — part of a gradual move
+toward fewer external dependencies generally; see "Reading GML files" below for what that buys you over
+`from_networkx(nx.read_gml(...))`. `networkx`/`pandas` are optional dependencies — only imported when you
+actually call one of the networkx-backed functions, so you don't need them installed otherwise.
+
+### Reading GML files
+
+`read_gml` is a native parser (no dependency, including no networkx) for GML (Graph Modelling Language),
+the simple hierarchical key-value format used by Graphlet, Gephi, Cytoscape, igraph, yEd and others:
+
+```python
+from plexgraph_core import read_gml
+
+g = read_gml("network.gml")
+```
+
+GML has no native concept of multiple edge-type layers or time-varying data — it predates
+multilayer/temporal network research — so, as with `read_edgelist`, you name which custom GML edge
+attribute holds that information:
+
+```python
+g = read_gml("network.gml", layer_key="relation", t_start_key="start", t_end_key="end")
+```
+
+A node's plexgraph key is its GML `id` by default (always present and unique, so never ambiguous);
+`label_as_key=True` uses the `label` attribute instead, if your file has one on every node and they're all
+distinct. `weight_key` (default `"weight"`) names the edge attribute read as plexgraph's `weight` — GML
+itself has no single standard name for this across writers, so pass `weight_key="value"` if that's what
+your file uses instead. Every other node/edge attribute is kept as-is, with its GML type (int, float or
+text).
+
+Parsed leniently, matching how real GML files in the wild actually look rather than only the strict
+formal grammar: both of GML's real-world quoting conventions are read correctly (`&quot;`-style entity
+escaping, the spec's own way, and `\"`-style backslash escaping, which at least one other graph tool
+writes instead), a quoted value may contain a literal newline, and `_` is accepted in attribute names even
+though the formal grammar is letters-and-digits only — the same leniency philosophy igraph's own GML
+reader uses, since many files already deviate from the strict spec in exactly these ways.
 
 ### Plain edge-list files with properties
 

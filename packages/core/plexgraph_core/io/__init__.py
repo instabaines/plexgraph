@@ -6,6 +6,7 @@ from plexgraph_core.io.edgelist import (
     to_pandas_edgelist,
     write_edgelist,
 )
+from plexgraph_core.io.gml import read_gml
 from plexgraph_core.io.networkx_io import from_gexf, from_graphml, from_networkx, to_networkx, write_gexf, write_graphml
 from plexgraph_core.io.temporal import from_pandas_temporal_edgelist, from_temporal_edgelist, read_temporal_edgelist
 
@@ -26,4 +27,5 @@ __all__ = [
     "from_graphml",
     "write_gexf",
     "write_graphml",
+    "read_gml",
 ]

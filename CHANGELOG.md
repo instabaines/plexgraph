@@ -47,6 +47,19 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   elapsed time). See "Temporal paths" in the user guide for the exact availability-window semantics and what
   isn't built yet (temporal betweenness, a real step up in complexity: counting optimal paths is #P-hard in
   general, unlike finding just one).
+- **`read_gml()`**: a native GML (Graph Modelling Language) reader -- no dependency, including no networkx,
+  the first format plexgraph reads without delegating to it, part of a gradual move toward fewer external
+  dependencies generally. Parsed leniently rather than only to the strict formal grammar, matching how real
+  GML files in the wild actually look (the same philosophy igraph's own lenient GML reader uses): both of
+  GML's real-world quoting conventions are read correctly (`&quot;`-style entity escaping, the spec's own
+  way, and `\"`-style backslash escaping, which at least one other graph tool writes instead, despite
+  conflicting with the spec), a quoted value may contain a literal newline, and `_` is accepted in
+  attribute names even though the formal grammar is letters-and-digits only. `layer_key=`/`t_start_key=`/
+  `t_end_key=` name a custom GML edge attribute to read as plexgraph's layer/t_start/t_end, the same
+  convention-based approach `read_edgelist` already uses for arbitrary extra columns, since GML itself has
+  no native concept of either (it predates multilayer/temporal network research). Cross-validated against a
+  real GML file written by networkx (not just hand-constructed examples): identical node/edge counts,
+  identical edge set, attributes preserved. See "Reading GML files" in the user guide.
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
   correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
   own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's
