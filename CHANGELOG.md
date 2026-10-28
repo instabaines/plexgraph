@@ -37,6 +37,16 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   zero-degree one for every layer -- harmless for community detection's partition, but would otherwise have
   quietly diluted every other node's share of PageRank's teleportation probability. `result.apply_as_node_attribute(g)`
   works the same way as community detection's. See "Centrality" in the user guide.
+- **`plexgraph_core.algorithms.temporal.temporal_reachability()`/`temporal_closeness_centrality()`**:
+  time-respecting ("foremost") paths for temporal networks -- the earliest time every node can be reached
+  departing no earlier than a given start time, honoring the non-transitivity real contact sequences have
+  (a contact can only be followed by a later one; "A contacted B, B had already contacted C" is not a valid
+  two-hop route, something a plain shortest-path algorithm gets wrong on this kind of data). The temporal
+  analogue of Dijkstra's shortest path, with arrival time playing the role of distance; `reach.path_to(node)`
+  reconstructs the actual route. `temporal_closeness_centrality` builds on it (harmonic closeness over
+  elapsed time). See "Temporal paths" in the user guide for the exact availability-window semantics and what
+  isn't built yet (temporal betweenness, a real step up in complexity: counting optimal paths is #P-hard in
+  general, unlike finding just one).
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
   correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
   own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's

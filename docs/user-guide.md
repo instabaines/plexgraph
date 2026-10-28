@@ -22,6 +22,7 @@ installed version and whether the viewer is bundled.
 - [Reading graphs from other sources](#reading-graphs-from-other-sources)
 - [Community detection](#community-detection)
 - [Centrality](#centrality)
+- [Temporal paths](#temporal-paths)
 - [Jupyter notes](#jupyter-notes)
 - [Scale and performance](#scale-and-performance)
 - [Known limitations](#known-limitations)
@@ -503,6 +504,50 @@ questions. `coupling_weight` (default 1.0) sets how strongly a node's layers are
 inter-layer coupling edges entirely (though PageRank's teleportation still crosses layers regardless, as
 above). Hyperedges aren't supported directly, same as community detection: run `bipartite_expansion(graph)`
 first.
+
+## Temporal paths
+
+Plain shortest-path algorithms get contact-sequence data wrong: if A contacted B at noon and B had already
+contacted C that morning, "A-B-C" isn't a valid route — A can't ride a contact that already happened. A valid
+route only uses contacts in non-decreasing time order — a *time-respecting path*. `temporal_reachability`
+computes the earliest time every node can be reached this way, the temporal analogue of Dijkstra's shortest
+path (arrival time plays the role of distance):
+
+```python
+from plexgraph_core.algorithms.temporal import temporal_reachability, temporal_closeness_centrality
+
+reach = temporal_reachability(g, "alice", start_time=0)     # departing no earlier than t=0
+reach.arrival                                                 # {node_id: earliest arrival time}
+reach.path_to("carol")                                        # the actual route, or None if unreachable
+
+closeness = temporal_closeness_centrality(g, start_time=0)   # {node_id: how easily it's reached}
+for node_id, value in closeness.items():
+    g.set_node_attrs(node_id, closeness=value)
+show(g, node_color_by="closeness")
+```
+
+A connector is available for its whole `[t_start, t_end]` span (an instantaneous `(u, v, t)` event is the
+common case, where `t_start == t_end`): you may depart along it at any moment that is both at or after your
+own current arrival time and at or after the connector's `t_start`, as long as that moment is still within
+`t_end` — waiting for a connector to open is allowed, missing its close is not. A connector with no explicit
+time (`t_start=-inf`, `t_end=inf`, the static-graph default) is always available. Direction is honored.
+
+`temporal_closeness_centrality` sums `1/(elapsed time)` over everything actually reachable from each node
+(harmonic closeness, which stays well-defined even when the graph isn't fully reachable from every node — an
+unreachable node just contributes 0 rather than making the whole score undefined). There is no
+`apply_as_node_attribute()` helper here (unlike community detection and centrality) since the result is
+already a plain `{node_id: value}` dict — the `set_node_attrs` loop above is the whole thing.
+
+`temporal_reachability` specifically finds the *foremost* path (earliest arrival) between every pair, one of
+three optimality notions the temporal-paths literature distinguishes — the other two are *shortest*
+(fewest contacts) and *fastest* (least total travel time), each useful for different questions and not
+interchangeable. Not yet implemented: temporal betweenness centrality, which needs enumerating -- not just
+finding one -- optimal path between every pair. That's a real step up in complexity: counting foremost and
+fastest paths is #P-hard, so the corresponding betweenness is intractable in general; only shortest-path
+betweenness (and two special cases of foremost-path betweenness) have known polynomial algorithms ([Buss,
+Molter, Niedermeier & Rymar, "Algorithmic Aspects of Temporal Betweenness",
+2020/2024](https://arxiv.org/abs/2006.08668)). Hyperedges aren't supported directly: run
+`bipartite_expansion(graph)` first.
 
 ## Where it runs
 
