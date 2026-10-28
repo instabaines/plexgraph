@@ -205,3 +205,70 @@ def test_apply_as_node_attribute_uses_a_custom_attribute_name():
     result.apply_as_node_attribute(g, attribute="cluster")
     assert "cluster" in g.node(a[0]).attrs
     assert "community" not in g.node(a[0]).attrs
+
+
+# ---- temporal (ordinal coupling) ----
+
+
+def _four_time_slices_with_a_shared_node() -> tuple[Graph, list[int], int]:
+    """Four chronological layers (t0..t3), each its own clean 5-node clique, all sharing one node --
+    by construction nothing forces agreement across slices except the coupling itself."""
+    g = Graph()
+    layers = [g.add_layer(f"t{i}") for i in range(4)]
+    shared = g.add_node("shared")
+    for li in layers:
+        members = [g.add_node(f"m{li}_{k}") for k in range(5)]
+        for a in range(len(members)):
+            for b in range(a + 1, len(members)):
+                g.add_edge(members[a], members[b], layer=li)
+            g.add_edge(shared, members[a], layer=li)
+    return g, layers, shared
+
+
+def test_invalid_coupling_raises():
+    g, _, _ = _four_time_slices_with_a_shared_node()
+    with pytest.raises(ValueError, match="coupling"):
+        detect_communities(g, coupling="nonsense")
+
+
+def test_ordinal_coupling_needs_more_omega_to_reach_full_agreement_than_categorical():
+    # Categorical pulls every pair of a node's layers directly; ordinal only pulls adjacent ones,
+    # so agreement across non-adjacent slices can only arrive by propagating through the chain --
+    # at a moderate omega, categorical should already have converged while ordinal hasn't yet.
+    g, layers, shared = _four_time_slices_with_a_shared_node()
+    categorical = detect_communities(g, coupling="categorical", omega=0.5, seed=0)
+    ordinal = detect_communities(g, coupling="ordinal", omega=0.5, seed=0)
+    cat_communities = {categorical.state_communities[(shared, li)] for li in layers}
+    ord_communities = {ordinal.state_communities[(shared, li)] for li in layers}
+    assert len(cat_communities) == 1
+    assert len(ord_communities) > 1
+
+
+def test_ordinal_coupling_eventually_reaches_full_agreement_too():
+    g, layers, shared = _four_time_slices_with_a_shared_node()
+    result = detect_communities(g, coupling="ordinal", omega=2.0, seed=0)
+    communities = {result.state_communities[(shared, li)] for li in layers}
+    assert len(communities) == 1
+
+
+def test_ordinal_coupling_skips_layers_a_node_is_absent_from():
+    # The shared node appears only in t0 and t2 (not t1) -- under ordinal coupling it should still
+    # couple across that gap to its nearest actual appearances, not end up uncoupled from everything.
+    g = Graph()
+    t0, t1, t2 = (g.add_layer(f"t{i}") for i in range(3))
+    shared = g.add_node("shared")
+    for li in (t0, t2):
+        members = [g.add_node(f"m{li}_{k}") for k in range(5)]
+        for a in range(len(members)):
+            for b in range(a + 1, len(members)):
+                g.add_edge(members[a], members[b], layer=li)
+            g.add_edge(shared, members[a], layer=li)
+    others = [g.add_node(f"other{k}") for k in range(4)]
+    for a in range(len(others)):
+        for b in range(a + 1, len(others)):
+            g.add_edge(others[a], others[b], layer=t1)
+
+    low = detect_communities(g, coupling="ordinal", omega=0.0, seed=0)
+    high = detect_communities(g, coupling="ordinal", omega=5.0, seed=0)
+    assert low.state_communities[(shared, t0)] != low.state_communities[(shared, t2)]
+    assert high.state_communities[(shared, t0)] == high.state_communities[(shared, t2)]

@@ -9,6 +9,17 @@ model at all -- coupling isn't modeling a random process to compare against, it'
 that rewards a node's copies landing in the same community. `layer=None` (plexgraph's "always
 present" backbone connectors) is treated as its own pseudo-layer, like any other.
 
+Two coupling topologies, straight from the paper (section discussing the "Tastes, Ties, and Time"
+multiplex example vs. the U.S. Senate temporal example): `coupling="categorical"` (the default)
+couples every pair of a node's layer copies, right for genuinely multiplex layers (edge *types* with
+no inherent order -- friendship, co-authorship, ...). `coupling="ordinal"` instead couples each
+layer only to its immediate predecessor/successor, in `graph.layers()` order (i.e. the order
+`add_layer()` was called) -- right for temporal slices, matching the paper's own Senate
+roll-call-voting application (each Congress a slice, coupled only to adjacent Congresses, omega=0.5
+in their study). Build a temporal graph by calling `add_layer()` once per time slice in
+chronological order, bucket connectors into those layers yourself (there is no automatic time ->
+layer bucketing here), and pass `coupling="ordinal"`.
+
 A graph with no layers collapses to exactly one state node per node -- ordinary single-layer
 Louvain modularity maximization (Blondel et al. 2008), with no coupling term at all.
 
@@ -81,6 +92,7 @@ def detect_communities(
     *,
     resolution: float = 1.0,
     omega: float = 1.0,
+    coupling: str = "categorical",
     seed: int | None = None,
     max_passes: int = 100,
 ) -> CommunityResult:
@@ -88,14 +100,18 @@ def detect_communities(
 
     `resolution` (gamma) scales the null model within every layer: above 1 favors more, smaller
     communities; below 1 favors fewer, larger ones. `omega` is the flat bonus for a node's state
-    nodes across layers sharing a community: 0 makes every layer's partition fully independent
-    (as if each layer were community-detected on its own); large values increasingly force a
-    node's communities to agree across all the layers it appears in.
+    nodes across coupled layers sharing a community: 0 makes every layer's partition fully
+    independent (as if each layer were community-detected on its own); large values increasingly
+    force a node's communities to agree across the layers it's coupled to. `coupling` is
+    `"categorical"` (every pair of a node's layers, for multiplex edge-types) or `"ordinal"` (only
+    adjacent layers in declaration order, for temporal slices) -- see the module docstring.
     """
     if not np.isfinite(resolution) or resolution < 0:
         raise ValueError("resolution must be nonnegative and finite")
     if not np.isfinite(omega) or omega < 0:
         raise ValueError("omega must be nonnegative and finite")
+    if coupling not in ("categorical", "ordinal"):
+        raise ValueError(f"coupling must be 'categorical' or 'ordinal', got {coupling!r}")
     if not isinstance(max_passes, int) or max_passes < 1:
         raise ValueError("max_passes must be a positive integer")
 
@@ -104,7 +120,8 @@ def detect_communities(
     if n == 0:
         return CommunityResult({}, 0.0, {})
 
-    siblings = _siblings(state_index)
+    layer_order: dict["LayerId | None", int] = {layer.id: position for position, layer in enumerate(graph.layers())}
+    siblings = _coupling_pairs(state_index, coupling, layer_order)
     community = _local_moving_louvain(n, layer_of, neighbors, siblings, deg, two_m, resolution, omega, seed, max_passes)
     modularity = _modularity(n, layer_of, neighbors, siblings, deg, two_m, community, resolution, omega)
 
@@ -171,15 +188,38 @@ def _build_state_graph(
     return state_index, layer_of, neighbors, deg, two_m
 
 
-def _siblings(state_index: dict[StateNode, int]) -> list[list[int]]:
+def _coupling_pairs(
+    state_index: dict[StateNode, int], coupling: str, layer_order: dict["LayerId | None", int]
+) -> list[list[int]]:
+    """For each state node, the other state nodes of the *same underlying node* it is coupled to.
+    `categorical`: every other layer. `ordinal`: only the nearest layer before and after it, among
+    the layers *this node actually appears in*, ordered by declaration order -- so a node absent
+    from some layers is coupled across the gap to its nearest actual appearances, not left
+    uncoupled by a missing neighbor. `layer=None` has no position in that order, so it is never
+    ordinally coupled to anything -- it stays its own uncoupled pseudo-layer under this mode."""
     by_node: dict[NodeId, list[int]] = {}
     for (node_id, _layer), idx in state_index.items():
         by_node.setdefault(node_id, []).append(idx)
-    siblings: list[list[int]] = [[] for _ in range(len(state_index))]
+    coupled: list[list[int]] = [[] for _ in range(len(state_index))]
+    if coupling == "categorical":
+        for idxs in by_node.values():
+            for idx in idxs:
+                coupled[idx] = [other for other in idxs if other != idx]
+        return coupled
+
+    index_to_state = {idx: state for state, idx in state_index.items()}
     for idxs in by_node.values():
-        for idx in idxs:
-            siblings[idx] = [other for other in idxs if other != idx]
-    return siblings
+        positioned = sorted(
+            (layer_order[index_to_state[idx][1]], idx) for idx in idxs if index_to_state[idx][1] in layer_order
+        )
+        for i, (_pos, idx) in enumerate(positioned):
+            neighbors_here = []
+            if i > 0:
+                neighbors_here.append(positioned[i - 1][1])
+            if i < len(positioned) - 1:
+                neighbors_here.append(positioned[i + 1][1])
+            coupled[idx] = neighbors_here
+    return coupled
 
 
 def _local_moving_louvain(

@@ -447,6 +447,16 @@ collapses it to one community per node, by whichever community holds the most of
 `resolution` (gamma) is the usual modularity resolution parameter: above 1 finds more, smaller communities;
 below 1 finds fewer, larger ones.
 
+**Temporal community detection** is the same algorithm with a different coupling topology — straight from the
+paper's own two worked examples, which use different coupling for genuinely multiplex layers versus a
+time-ordered sequence of slices. `coupling="categorical"` (the default) couples every pair of a node's
+layers, right for edge *types* with no inherent order. `coupling="ordinal"` instead couples each layer only to
+its nearest neighbor(s) among the layers a node actually appears in, in `add_layer()` declaration order — right
+for a graph built as one layer per time slice, matching the paper's own Senate roll-call-voting application
+(one layer per two-year Congress, coupled only to adjacent Congresses). There is no automatic time-to-layer
+bucketing here; build the slices yourself, one `add_layer()` call per slice in chronological order, and bucket
+each connector into the right one.
+
 This only understands plain and multilayer edges — hyperedges aren't modularity-native, so `detect_communities`
 raises if the graph has any; run `bipartite_expansion(graph)` first (`from
 plexgraph_core.algorithms.hypergraph import bipartite_expansion`), which turns each hyperedge into a synthetic

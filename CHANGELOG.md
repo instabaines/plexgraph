@@ -23,6 +23,9 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   the partition onto the graph as a node attribute, so `show(g, node_color_by="community")` colors, legends
   and filters it through the viewer's existing attribute machinery -- no viewer changes needed. See "Community
   detection" in the user guide; there is still no dedicated "detect communities" button in the viewer itself.
+  `coupling="ordinal"` (alongside the default `"categorical"`) couples each layer only to its nearest
+  neighbors in declaration order instead of every pair -- temporal community detection, matching the same
+  paper's own Senate roll-call-voting application (one layer per time slice, coupled only to adjacent slices).
 
 ### Fixed
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
