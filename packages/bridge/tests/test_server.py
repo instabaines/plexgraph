@@ -1,5 +1,6 @@
 import asyncio
 import http.client
+import json
 
 import msgpack
 import pytest
@@ -228,6 +229,100 @@ async def test_with_a_token_the_right_one_gets_the_graph_from_any_origin(viewer_
             assert msgpack.unpackb(await ws.recv(), raw=False)["type"] == "graph"
         # the page itself carries no data, so it stays reachable without the token
         assert (await _get(port, "/"))[0] == 200
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+async def _next_ack(ws, of: str) -> dict:
+    """Read messages until the ack for `of` arrives -- it races the layout stream already in progress."""
+    while True:
+        message = msgpack.unpackb(await ws.recv(), raw=False)
+        if message["type"] == "ack" and message["of"] == of:
+            return message
+
+
+@pytest.mark.asyncio
+async def test_load_file_swaps_the_live_graph_and_acks(tmp_path):
+    path = tmp_path / "g.txt"
+    path.write_text("0 1\n1 2\n2 3\n")  # a 4-node path, different from the server's starting graph
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()  # the starting graph
+            await ws.send(msgpack.packb({"type": "load_file", "path": str(path)}, use_bin_type=True))
+            ack = await _next_ack(ws, "load_file")
+            assert ack == {"type": "ack", "of": "load_file", "ok": True, "error": None}
+        assert server.graph.num_nodes == 4 and server.graph.num_edges == 3
+
+        # the frontend's own reaction (not exercised here) is to close and reopen its socket; a fresh
+        # connection should already see the swapped-in graph through the ordinary path.
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            fresh = msgpack.unpackb(await ws.recv(), raw=False)
+            assert len(fresh["nodes"]) == 4
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_load_file_with_an_unknown_extension_acks_an_error_without_touching_the_graph(tmp_path):
+    path = tmp_path / "g.weird"
+    path.write_text("whatever")
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()
+            await ws.send(msgpack.packb({"type": "load_file", "path": str(path)}, use_bin_type=True))
+            ack = await _next_ack(ws, "load_file")
+            assert ack["ok"] is False and ".weird" in ack["error"]
+        assert server.graph.num_nodes == 5  # unchanged
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_save_project_writes_the_graph_layout_and_given_style(tmp_path):
+    path = tmp_path / "project.json"
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=3, seed=9,
+                          layer_gravity=0.2, hub_inertia=0.6)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()
+            await ws.send(msgpack.packb(
+                {"type": "save_project", "path": str(path), "style": {"background": [1.0, 0.0, 0.0, 1.0]}},
+                use_bin_type=True,
+            ))
+            ack = await _next_ack(ws, "save_project")
+            assert ack == {"type": "ack", "of": "save_project", "ok": True, "error": None}
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    data = json.loads(path.read_text())
+    assert data["plexgraph_project"] == 1
+    assert len(data["graph"]["nodes"]) == 5
+    assert data["layout"] == {"seed": 9, "layer_gravity": 0.2, "hub_inertia": 0.6, "layout_iterations": 3}
+    assert data["style"]["spec"] == {"background": [1.0, 0.0, 0.0, 1.0]}
+
+
+@pytest.mark.asyncio
+async def test_save_project_to_an_unwritable_path_acks_an_error():
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()
+            await ws.send(msgpack.packb(
+                {"type": "save_project", "path": "/no/such/directory/project.json", "style": None},
+                use_bin_type=True,
+            ))
+            ack = await _next_ack(ws, "save_project")
+            assert ack["ok"] is False and ack["error"]
     finally:
         server.close()
         await server.wait_closed()

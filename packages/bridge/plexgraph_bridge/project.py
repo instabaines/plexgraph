@@ -19,20 +19,31 @@ from pathlib import Path
 from typing import Any
 
 from plexgraph_core.io.json_io import graph_from_dict, graph_to_dict
+from plexgraph_core.model.ir import Graph
 
 PROJECT_SCHEMA_VERSION = 1
 
 
-def _project_dict(handle: Any) -> dict[str, Any]:
-    controller = handle._controller()
+def build_project_dict(
+    graph: Graph,
+    *,
+    layout: dict[str, Any] | None = None,
+    style_spec: dict[str, Any] | None = None,
+    painted: dict[Any, tuple[float, ...]] | None = None,
+    initial_style: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a project file's contents from its raw pieces -- no `ShowHandle` required, so a caller
+    with just a graph and whatever style/layout state it already has on hand (the desktop sidecar's
+    `"save_project"` wire message handler, which has no notebook/browser session at all) can save a
+    project the same way `save_project` does for one."""
     return {
         "plexgraph_project": PROJECT_SCHEMA_VERSION,
-        "graph": graph_to_dict(controller._graph),
-        "layout": dict(handle._layout_params),
+        "graph": graph_to_dict(graph),
+        "layout": dict(layout or {}),
         "style": {
-            "initial": dict(handle._initial_style),
-            "spec": controller.spec(),
-            "painted": [[key, list(rgba)] for key, rgba in controller.painted().items()],
+            "initial": dict(initial_style or {}),
+            "spec": style_spec or {},
+            "painted": [[key, list(rgba)] for key, rgba in (painted or {}).items()],
         },
     }
 
@@ -41,7 +52,15 @@ def save_project(handle: Any, path: str | os.PathLike[str]) -> None:
     """Save `handle`'s graph, style and layout parameters to `path` as one JSON file -- see the
     module docstring for exactly what this does and does not capture. Usually called as
     `handle.save_project(path)` rather than directly."""
-    Path(path).write_text(json.dumps(_project_dict(handle), indent=2), encoding="utf-8")
+    controller = handle._controller()
+    data = build_project_dict(
+        controller._graph,
+        layout=handle._layout_params,
+        style_spec=controller.spec(),
+        painted=controller.painted(),
+        initial_style=handle._initial_style,
+    )
+    Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def open_project(path: str | os.PathLike[str], **show_overrides: Any) -> Any:

@@ -12,6 +12,7 @@ from plexgraph_core.io import (
     read_edgelist,
     read_gexf,
     read_gml,
+    read_graph,
     read_graphml,
     read_json,
     read_node_attributes,
@@ -24,6 +25,7 @@ from plexgraph_core.io import (
     write_gexf,
     write_graphml,
     write_json,
+    UnknownGraphFormatError,
 )
 from plexgraph_core.model.ir import Connector, Graph, Layer, Node
 
@@ -57,4 +59,6 @@ __all__ = [
     "graph_from_dict",
     "write_json",
     "read_json",
+    "read_graph",
+    "UnknownGraphFormatError",
 ]

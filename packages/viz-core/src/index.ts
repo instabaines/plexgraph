@@ -4,8 +4,8 @@ import { Renderer, RendererOptions, StackAxis, TimeFilterOptions, TimeSplit } fr
 import { WebSocketTransport, type TransportHandlers } from "./transport/websocket";
 import { ParentTransport, PARENT_TRANSPORT } from "./transport/parent";
 export { PARENT_TRANSPORT } from "./transport/parent";
-import type { ExportRequestMessage, WireNode } from "./ir/types";
-import { isExportRequestMessage, isGraphMessage, isLayoutStepMessage, isStyleMessage } from "./ir/types";
+import type { AckMessage, ExportRequestMessage, WireNode } from "./ir/types";
+import { isAckMessage, isExportRequestMessage, isGraphMessage, isLayoutStepMessage, isStyleMessage } from "./ir/types";
 import { applyStyleMessage } from "./style/messages";
 import type { AttributeSummary, NodeFilter } from "./interaction/graph-index";
 import type { StyleSpec } from "./style/spec";
@@ -97,6 +97,14 @@ export interface ViewerHandle {
   /** Serialize the current view (whichever mode is active) to a vector
    * SVG string — see Renderer.exportSVG. */
   exportSVG(): string;
+  /** Ask the sidecar to read `path` and make it the live graph (the desktop app's native Open-File
+   * dialog) -- not supported over the notebook transport, which has no filesystem of its own to
+   * read from. The result arrives asynchronously as an AckMessage; see MountViewerOptions.onFileAck. */
+  loadFile(path: string): void;
+  /** Ask the sidecar to write the live graph, its layout parameters, and this viewer's current
+   * style (getStyle()) to `path` as a project file (the native Save-Project dialog) -- not
+   * supported over the notebook transport. See MountViewerOptions.onFileAck for the result. */
+  saveProject(path: string): void;
 }
 
 export interface MountViewerOptions extends RendererOptions {
@@ -105,6 +113,8 @@ export interface MountViewerOptions extends RendererOptions {
   onError?: (err: unknown) => void;
   /** Called when a style pushed from Python is invalid; the previous style stays in place. */
   onStyleError?: (err: unknown) => void;
+  /** The sidecar's reply to loadFile()/saveProject(); see AckMessage. */
+  onFileAck?: (ack: AckMessage) => void;
 }
 
 /**
@@ -156,6 +166,8 @@ export function mountViewer(
         }
       } else if (isExportRequestMessage(msg)) {
         handleExportRequest(msg);
+      } else if (isAckMessage(msg)) {
+        options?.onFileAck?.(msg);
       }
     },
     onOpen: options?.onOpen,
@@ -210,6 +222,18 @@ export function mountViewer(
     },
     exportSVG(): string {
       return renderer.exportSVG();
+    },
+    loadFile(path: string): void {
+      if (!(transport instanceof WebSocketTransport)) {
+        throw new Error("loadFile is only available over a WebSocket connection, not in a notebook widget");
+      }
+      transport.sendLoadFile(path);
+    },
+    saveProject(path: string): void {
+      if (!(transport instanceof WebSocketTransport)) {
+        throw new Error("saveProject is only available over a WebSocket connection, not in a notebook widget");
+      }
+      transport.sendSaveProject(path, renderer.getStyle());
     },
   };
 }

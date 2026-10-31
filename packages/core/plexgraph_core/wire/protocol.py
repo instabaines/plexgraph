@@ -142,3 +142,10 @@ def encode_export_request(request_id: str, fmt: str) -> bytes:
     and ClientHub.request_export). `request_id` round-trips into the reply so it can be matched to this request."""
     return msgpack.packb({"type": "export_request", "id": request_id, "format": fmt}, use_bin_type=True)
 
+
+def encode_ack(of: str, ok: bool, error: str | None = None) -> bytes:
+    """Reply to a one-off command a viewer sent (desktop app's `"load_file"`/`"save_project"`; see
+    BridgeServer._handle_incoming). `of` names the command this acknowledges, so a viewer handling
+    several kinds of ack can tell them apart without a separate message type per command."""
+    return msgpack.packb({"type": "ack", "of": of, "ok": ok, "error": error}, use_bin_type=True)
+

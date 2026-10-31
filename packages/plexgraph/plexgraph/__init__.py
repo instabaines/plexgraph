@@ -55,6 +55,7 @@ from plexgraph_core import (
     read_edgelist,
     read_gexf,
     read_gml,
+    read_graph,
     read_graphml,
     read_json,
     read_node_attributes,
@@ -67,6 +68,7 @@ from plexgraph_core import (
     write_gexf,
     write_graphml,
     write_json,
+    UnknownGraphFormatError,
 )
 
 if TYPE_CHECKING:

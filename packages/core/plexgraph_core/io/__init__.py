@@ -1,4 +1,5 @@
 from plexgraph_core.io.attributes import read_node_attributes, read_pandas_node_attributes
+from plexgraph_core.io.auto import UnknownGraphFormatError, read_graph
 from plexgraph_core.io.dot import read_dot
 from plexgraph_core.io.edgelist import (
     from_edgelist,
@@ -41,4 +42,6 @@ __all__ = [
     "graph_from_dict",
     "write_json",
     "read_json",
+    "read_graph",
+    "UnknownGraphFormatError",
 ]

@@ -10,7 +10,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@plexgraph/viz-core": "workspace:*"
+    "@plexgraph/viz-core": "workspace:*",
+    "@tauri-apps/api": "^2.9.0"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

@@ -2,6 +2,7 @@ import { formatTime, mountViewer, PARENT_TRANSPORT, RendererOptions, rgbaToCss, 
 import { exportView, type ExportFormat } from "./export";
 import { mountAppearance } from "./appearance";
 import { mountTools } from "./tools";
+import { mountDesktopIntegration } from "./desktop";
 
 function parseStyleParam(raw: string | null): RendererOptions {
   if (!raw) return {};
@@ -262,6 +263,11 @@ if (!wsPort) {
       }
     },
     onColorLegend: (target, legend) => renderLegend(target === "node" ? nodeColorLegendEl : edgeColorLegendEl, target === "node" ? "Node color" : "Edge color", legend, timeUnit),
+    onFileAck: (ack) => desktop.handleAck(ack),
+  });
+  const desktop = mountDesktopIntegration(handle, (text) => {
+    connectionStatus = text;
+    setStatus(connectionStatus);
   });
   tools = mountTools(toolsEl, handle, (id) => handle.getNodeKey(id) ?? String(id));
   appearance = mountAppearance(appearanceEl, handle, () => tools?.getSelection() ?? []);

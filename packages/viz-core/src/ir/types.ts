@@ -77,10 +77,24 @@ export interface ExportRequestMessage {
   format: "svg" | "png";
 }
 
-export type WireMessage = GraphMessage | LayoutStepMessage | StyleMessage | ExportRequestMessage;
+/** Python's reply to a one-off command the viewer sent — currently `"load_file"`/`"save_project"`
+ * (the desktop app's native Open-File/Save-Project dialogs; see Transport.sendLoadFile/
+ * sendSaveProject and BridgeServer._handle_incoming). `of` names which command this acknowledges. */
+export interface AckMessage {
+  type: "ack";
+  of: string;
+  ok: boolean;
+  error: string | null;
+}
+
+export type WireMessage = GraphMessage | LayoutStepMessage | StyleMessage | ExportRequestMessage | AckMessage;
 
 export function isStyleMessage(msg: WireMessage): msg is StyleMessage {
   return msg.type === "style";
+}
+
+export function isAckMessage(msg: WireMessage): msg is AckMessage {
+  return msg.type === "ack";
 }
 
 export function isGraphMessage(msg: WireMessage): msg is GraphMessage {

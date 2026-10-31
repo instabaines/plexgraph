@@ -15,7 +15,15 @@
 use rand::Rng;
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
-use tauri::{RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{Emitter, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_dialog::DialogExt;
+
+/// Extensions `read_graph` (plexgraph_core/io/auto.py) knows how to load -- kept in sync with that
+/// dispatcher's `_READERS` table so the native Open-File dialog never offers a file it can't read.
+const GRAPH_FILE_EXTENSIONS: &[&str] = &[
+    "gml", "gexf", "graphml", "dot", "gv", "net", "json", "txt", "edgelist",
+];
 
 /// The sidecar's fixed, pre-agreed port -- reasonable for a single-user local desktop app (see
 /// the module docstring on `desktop_sidecar.py`), must match its own `DEFAULT_PORT`.
@@ -73,6 +81,7 @@ pub fn run() {
 
     let sidecar_for_setup = sidecar.clone();
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -96,6 +105,68 @@ pub fn run() {
                 .title("plexgraph")
                 .inner_size(1000.0, 700.0)
                 .build()?;
+
+            let open_item =
+                MenuItem::with_id(app, "open_graph", "Open Graph…", true, Some("CmdOrCtrl+O"))?;
+            let save_item = MenuItem::with_id(
+                app,
+                "save_project",
+                "Save Project As…",
+                true,
+                Some("CmdOrCtrl+S"),
+            )?;
+            let file_menu = Submenu::with_items(
+                app,
+                "File",
+                true,
+                &[
+                    &open_item,
+                    &save_item,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::quit(app, None)?,
+                ],
+            )?;
+            app.set_menu(Menu::with_items(app, &[&file_menu])?)?;
+
+            // Native Open-File/Save-Project dialogs: the dialog itself only ever runs here, in
+            // Rust -- the frontend only ever sees the path it chose, via a Tauri event, and does
+            // the actual work (sending the "load_file"/"save_project" wire message to the Python
+            // sidecar and reacting to its ack) exactly as it already does for the "Export ▾"
+            // button's own request/response round trip. See `ViewerHandle.loadFile`/`.saveProject`
+            // in viz-core, and `desktop.ts` in packages/app.
+            app.on_menu_event(move |app_handle, event| {
+                let app_handle = app_handle.clone();
+                match event.id().as_ref() {
+                    "open_graph" => {
+                        app_handle
+                            .clone()
+                            .dialog()
+                            .file()
+                            .add_filter("Graph files", GRAPH_FILE_EXTENSIONS)
+                            .pick_file(move |picked| {
+                                if let Some(path) = picked {
+                                    let _ =
+                                        app_handle.emit("plexgraph://open-file", path.to_string());
+                                }
+                            });
+                    }
+                    "save_project" => {
+                        app_handle
+                            .clone()
+                            .dialog()
+                            .file()
+                            .set_file_name("project.json")
+                            .add_filter("plexgraph project", &["json"])
+                            .save_file(move |picked| {
+                                if let Some(path) = picked {
+                                    let _ = app_handle
+                                        .emit("plexgraph://save-project", path.to_string());
+                                }
+                            });
+                    }
+                    _ => {}
+                }
+            });
 
             Ok(())
         })

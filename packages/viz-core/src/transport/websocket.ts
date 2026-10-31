@@ -36,6 +36,20 @@ export class WebSocketTransport {
     this.socket.send(encode({ type: "export_response", id, format, data, error }));
   }
 
+  /** Ask the sidecar to read `path` (by its extension) and make it the live graph — the desktop app's
+   * native Open-File dialog. The reply is an AckMessage with `of: "load_file"`. */
+  sendLoadFile(path: string): void {
+    this.socket.send(encode({ type: "load_file", path }));
+  }
+
+  /** Ask the sidecar to write the live graph, its layout parameters, and `styleSpec` (as returned by
+   * ViewerHandle.getStyle(), the only place that style is canonical in the desktop app, which has no
+   * server-side StyleController) to `path` as a project file — the native Save-Project dialog. The
+   * reply is an AckMessage with `of: "save_project"`. */
+  sendSaveProject(path: string, styleSpec: unknown): void {
+    this.socket.send(encode({ type: "save_project", path, style: styleSpec }));
+  }
+
   close(): void {
     this.socket.close();
   }

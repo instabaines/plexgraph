@@ -2,9 +2,13 @@
 browser tab that connects gets its own Session (so reconnecting re-streams
 the current graph + a fresh layout run).
 
-Incoming messages from a tab are currently just export replies (ShowHandle.export/.save; see ClientHub.
-request_export) -- hover/selection events flowing frontend -> Python (docs/architecture/plan.md section 3) are not
-implemented yet.
+Incoming messages from a tab: export replies (ShowHandle.export/.save; see ClientHub.request_export),
+and -- for the desktop app's native Open-File/Save-Project dialogs -- `"load_file"`/`"save_project"`,
+each acknowledged with an `encode_ack` reply on the same connection. `"load_file"` swaps `self.graph`
+in place and does no hot-swap-mid-stream of its own: the desktop frontend reacts to a successful ack
+by closing and reopening its WebSocket, which lands in `_handle_connection` again and streams the
+new graph through the ordinary fresh-Session path below. Hover/selection events flowing frontend ->
+Python (docs/architecture/plan.md section 3) are not implemented yet.
 
 Python can change the viewer's style while it is open (`push_style`): the change goes to every connected tab, and a
 tab that connects later is brought up to date right after it receives the graph.
@@ -13,6 +17,7 @@ tab that connects later is brought up to date right after it receives the graph.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import mimetypes
 import secrets
@@ -25,9 +30,11 @@ from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.datastructures import Headers
 from websockets.http11 import Request, Response
 
-from plexgraph_bridge.hub import ClientHub
+from plexgraph_bridge.hub import ClientHub, Send
+from plexgraph_bridge.project import build_project_dict
+from plexgraph_core.io.auto import read_graph
 from plexgraph_core.model.ir import Graph
-from plexgraph_core.wire.protocol import decode
+from plexgraph_core.wire.protocol import decode, encode_ack
 
 if TYPE_CHECKING:
     from plexgraph_bridge.style import StyleController
@@ -88,13 +95,24 @@ class BridgeServer(ClientHub):
         self._server: Server | None = None
 
     async def _handle_connection(self, websocket: ServerConnection) -> None:
+        # One lock for every write to this connection: the graph/layout stream and style pushes
+        # already serialise through ClientHub's own per-client lock, but an ack reply (below) sits
+        # outside that path, and the websockets library requires concurrent sends on one connection
+        # to be externally synchronised -- unsynchronised concurrent writes can interleave at the
+        # transport level and corrupt the frame stream.
+        send_lock = asyncio.Lock()
+
+        async def send(data: bytes) -> None:
+            async with send_lock:
+                await websocket.send(data)
+
         async def until_gone() -> None:
             async for message in websocket:
-                self._handle_incoming(message)
+                await self._handle_incoming(message, send)
 
-        await self.serve_client(websocket.send, until_gone, closed=(websockets.ConnectionClosed,))
+        await self.serve_client(send, until_gone, closed=(websockets.ConnectionClosed,))
 
-    def _handle_incoming(self, message: str | bytes) -> None:
+    async def _handle_incoming(self, message: str | bytes, respond: Send) -> None:
         if not isinstance(message, bytes):
             return  # the protocol is binary-only; a text frame is not one of ours
         try:
@@ -102,8 +120,46 @@ class BridgeServer(ClientHub):
         except Exception:
             logger.warning("could not decode a message from a viewer", exc_info=True)
             return
-        if payload.get("type") == "export_response" and isinstance(payload.get("id"), str):
+        msg_type = payload.get("type")
+        if msg_type == "export_response" and isinstance(payload.get("id"), str):
             self.resolve_export(payload["id"], payload.get("data"), payload.get("error"))
+        elif msg_type == "load_file" and isinstance(payload.get("path"), str):
+            await self._load_file(payload["path"], respond)
+        elif msg_type == "save_project" and isinstance(payload.get("path"), str):
+            await self._save_project(payload["path"], payload.get("style"), respond)
+
+    async def _load_file(self, path: str, respond: Send) -> None:
+        """Read `path` with the format its extension names and make it the live graph -- the desktop app's
+        native Open-File dialog, relayed by the frontend (see the module docstring)."""
+        try:
+            graph = read_graph(path)
+        except Exception as exc:
+            logger.warning("load_file failed for %r", path, exc_info=True)
+            await respond(encode_ack("load_file", False, str(exc)))
+            return
+        self.graph = graph
+        await respond(encode_ack("load_file", True))
+
+    async def _save_project(self, path: str, style_spec: object, respond: Send) -> None:
+        """Write the live graph (plus layout parameters and, if given, the frontend's current style
+        spec) to `path` as a project file -- the desktop app's native Save-Project dialog. There is
+        no server-side `StyleController` in the bare desktop sidecar, so the style spec travels in
+        the request itself, read straight off the frontend's own `getStyle()`."""
+        try:
+            data = build_project_dict(
+                self.graph,
+                layout={
+                    "seed": self.seed, "layer_gravity": self.layer_gravity,
+                    "hub_inertia": self.hub_inertia, "layout_iterations": self.layout_iterations,
+                },
+                style_spec=style_spec if isinstance(style_spec, dict) else None,
+            )
+            Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except Exception as exc:
+            logger.warning("save_project failed for %r", path, exc_info=True)
+            await respond(encode_ack("save_project", False, str(exc)))
+            return
+        await respond(encode_ack("save_project", True))
 
     async def start(self) -> int:
         """Start listening and return the bound port."""

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   decodePositions,
+  isAckMessage,
   isGraphMessage,
   isLayoutStepMessage,
+  type AckMessage,
   type GraphMessage,
   type LayoutStepMessage,
 } from "./types";
@@ -23,6 +25,7 @@ describe("message type guards", () => {
     num_nodes: 0,
     positions: new Uint8Array(0),
   };
+  const ackMsg: AckMessage = { type: "ack", of: "load_file", ok: true, error: null };
 
   it("isGraphMessage narrows correctly", () => {
     expect(isGraphMessage(graphMsg)).toBe(true);
@@ -32,6 +35,11 @@ describe("message type guards", () => {
   it("isLayoutStepMessage narrows correctly", () => {
     expect(isLayoutStepMessage(layoutMsg)).toBe(true);
     expect(isLayoutStepMessage(graphMsg)).toBe(false);
+  });
+
+  it("isAckMessage narrows correctly", () => {
+    expect(isAckMessage(ackMsg)).toBe(true);
+    expect(isAckMessage(graphMsg)).toBe(false);
   });
 });
 

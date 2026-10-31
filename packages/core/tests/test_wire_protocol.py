@@ -4,7 +4,15 @@ import numpy as np
 
 from plexgraph_core.algorithms.layout import LayoutStep
 from plexgraph_core.model.ir import Graph
-from plexgraph_core.wire.protocol import decode, encode_graph, encode_layout_step
+from plexgraph_core.wire.protocol import decode, encode_ack, encode_graph, encode_layout_step
+
+
+def test_encode_decode_ack_roundtrip():
+    decoded = decode(encode_ack("load_file", True))
+    assert decoded == {"type": "ack", "of": "load_file", "ok": True, "error": None}
+
+    failed = decode(encode_ack("save_project", False, "disk full"))
+    assert failed == {"type": "ack", "of": "save_project", "ok": False, "error": "disk full"}
 
 
 def test_encode_decode_plain_graph_roundtrip():
