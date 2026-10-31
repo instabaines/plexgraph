@@ -148,11 +148,17 @@ async def run_server(graph: Graph, **kwargs) -> None:
     await server.wait_closed()
 
 
+def demo_graph() -> Graph:
+    """A small path graph, used wherever a stand-in graph is needed with no real data at hand --
+    this bare-server demo, and the desktop sidecar's own Phase A placeholder."""
+    g = Graph()
+    for i in range(20):
+        g.add_node(i)
+    for i in range(19):
+        g.add_edge(i, i + 1)
+    return g
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    demo = Graph()
-    for i in range(20):
-        demo.add_node(i)
-    for i in range(19):
-        demo.add_edge(i, i + 1)
-    asyncio.run(run_server(demo, port=8765))
+    asyncio.run(run_server(demo_graph(), port=8765))

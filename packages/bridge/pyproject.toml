@@ -27,6 +27,9 @@ jupyter = [
     "anywidget>=0.9",
 ]
 
+[project.scripts]
+plexgraph-sidecar = "plexgraph_bridge.desktop_sidecar:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
