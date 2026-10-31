@@ -28,6 +28,7 @@ from plexgraph_bridge import (
     by_time_bucket,
     by_values,
     by_weight,
+    open_project,
     shape_by_attribute,
     show,
     size_by_attribute,
@@ -48,11 +49,14 @@ from plexgraph_core import (
     from_pandas_edgelist,
     from_pandas_temporal_edgelist,
     from_temporal_edgelist,
+    graph_from_dict,
+    graph_to_dict,
     read_dot,
     read_edgelist,
     read_gexf,
     read_gml,
     read_graphml,
+    read_json,
     read_node_attributes,
     read_pajek,
     read_pandas_node_attributes,
@@ -62,6 +66,7 @@ from plexgraph_core import (
     write_edgelist,
     write_gexf,
     write_graphml,
+    write_json,
 )
 
 if TYPE_CHECKING:
@@ -86,10 +91,11 @@ __all__ = [
     "from_temporal_edgelist", "from_pandas_temporal_edgelist", "read_temporal_edgelist", "read_gml", "read_gexf",
     "read_graphml", "read_dot", "read_pajek",
     "read_node_attributes", "read_pandas_node_attributes",
+    "graph_to_dict", "graph_from_dict", "write_json", "read_json",
     # saving data
     "to_pandas_edgelist", "write_edgelist", "to_networkx", "write_gexf", "write_graphml",
     # showing it
-    "show", "ShowHandle", "BridgeServer",
+    "show", "ShowHandle", "BridgeServer", "open_project",
     # styling
     "RESET", "COLORMAPS", "PALETTES", "SHAPES", "STYLE_OPTIONS",
     "by_attribute", "by_degree", "by_weight", "by_time", "by_time_bucket", "by_values",

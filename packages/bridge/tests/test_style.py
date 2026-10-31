@@ -236,6 +236,23 @@ def test_the_controller_sends_updates_and_remembers_the_style_for_late_viewers()
     assert message["spec"] == {"node": {"color": {"kind": "degree", "colormap": "plasma"}, "size": 14.0}, "edge": {"curvature": 0.2}}
 
 
+def test_load_spec_sets_the_whole_spec_wholesale_and_sends_a_replace():
+    sent: list[tuple[int, list[dict]]] = []
+    ctl = StyleController(small_graph())
+    ctl.bind(lambda version, messages: sent.append((version, [decode(m) for m in messages])))
+    ctl.load_spec({"node": {"size": 9.0}})
+    assert sent[0][1][0]["op"] == "replace"
+    assert sent[0][1][0]["spec"] == {"node": {"size": 9.0}}
+    assert ctl.spec() == {"node": {"size": 9.0}}
+
+
+def test_load_spec_discards_whatever_was_there_before_rather_than_merging():
+    ctl = StyleController(small_graph())
+    ctl.update(node_size=14, edge_curvature=0.2)
+    ctl.load_spec({"node": {"color": [1.0, 0.0, 0.0, 1.0]}})
+    assert ctl.spec() == {"node": {"color": [1.0, 0.0, 0.0, 1.0]}}
+
+
 def test_painting_nodes_is_remembered_and_replayed_grouped_by_color():
     sent = []
     ctl = StyleController(small_graph())

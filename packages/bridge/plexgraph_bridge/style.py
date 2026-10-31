@@ -680,6 +680,15 @@ class StyleController:
             self._paint.clear()
             self._send([encode_style("reset")])
 
+    def load_spec(self, spec: dict[str, Any]) -> None:
+        """Replace the current style spec wholesale with an already-built spec, i.e. one `spec()`
+        previously returned -- for restoring a saved project. Unlike `update()`, this does not go
+        through `build_style()` (which expects networkx-style option names, not a spec already in
+        wire shape); sent as a `"replace"` (discard-and-set, not merge) to connected viewers."""
+        with self._lock:
+            self._spec = merge_style({}, spec)
+            self._send([encode_style("replace", spec=self._spec)])
+
     # -- reading it back
     def spec(self) -> dict[str, Any]:
         with self._lock:

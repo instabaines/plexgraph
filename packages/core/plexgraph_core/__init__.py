@@ -6,11 +6,14 @@ from plexgraph_core.io import (
     from_pandas_edgelist,
     from_pandas_temporal_edgelist,
     from_temporal_edgelist,
+    graph_from_dict,
+    graph_to_dict,
     read_dot,
     read_edgelist,
     read_gexf,
     read_gml,
     read_graphml,
+    read_json,
     read_node_attributes,
     read_pajek,
     read_pandas_node_attributes,
@@ -20,6 +23,7 @@ from plexgraph_core.io import (
     write_edgelist,
     write_gexf,
     write_graphml,
+    write_json,
 )
 from plexgraph_core.model.ir import Connector, Graph, Layer, Node
 
@@ -49,4 +53,8 @@ __all__ = [
     "read_graphml",
     "read_dot",
     "read_pajek",
+    "graph_to_dict",
+    "graph_from_dict",
+    "write_json",
+    "read_json",
 ]

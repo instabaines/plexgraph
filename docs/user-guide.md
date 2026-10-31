@@ -19,6 +19,7 @@ installed version and whether the viewer is bundled.
 - [Artistic styling: colors, sizes, shapes, live changes](#artistic-styling)
 - [Interacting with the viewer](#interacting-with-the-viewer)
 - [Exporting](#exporting)
+- [Saving and reopening a project](#saving-and-reopening-a-project)
 - [Reading graphs from other sources](#reading-graphs-from-other-sources)
 - [Community detection](#community-detection)
 - [Centrality](#centrality)
@@ -357,6 +358,39 @@ in that case `save()`/`export()` wait out the full timeout and raise `TimeoutErr
 answered correctly. `await` is a genuine yield, so it cannot cause this; `export_async()`/`save_async()` work
 reliably over both routes. See "Known limitations" below.
 
+## Saving and reopening a project
+
+`export()`/`save()` above capture a *picture* of the current view. `save_project()` is different: it saves the
+graph itself, the style, and the layout's own parameters to one JSON file, so you can close Python and come back
+to the same session later:
+
+```python
+handle = pg.show(g, node_color_by="team", seed=7)
+handle.save_project("my_network.pgproj")   # any filename/extension works; .pgproj is just a suggestion
+
+# later, in a new process
+handle = pg.open_project("my_network.pgproj")
+```
+
+`open_project` takes the same keyword arguments as `show()` (`host=`, `block=`, `open_browser=`, ...) and passes
+them straight through, since reopening a project *is* calling `show()` again, just with everything it needs
+already filled in from the file.
+
+**This is a reproducible snapshot, not a pixel-exact one.** A saved project captures:
+
+- The graph, losslessly — every node/edge/layer, every attribute, hyperedges and roles, temporal bounds — via
+  plexgraph's own native JSON format (see "Saving and round-tripping" below for that format on its own).
+- The style: both the `node_color=`/`node_size=`/... options set with `handle.style(...)`, and anything painted
+  with `handle.color_nodes(...)`.
+- The layout's `seed`, `layer_gravity`, `hub_inertia` and `layout_iterations`.
+
+What it does *not* capture: a node's literal on-screen position. The viewer has no drag-to-reposition feature yet
+and never reports positions back to Python — `force_directed_layout()` runs fresh, server-side, each time a tab
+connects, streaming positions one-way. Reopening a project re-runs that same deterministic computation with the
+same seed, which lands back on the same positions as a *result* of recomputing them, not by recalling literal
+coordinates. If per-node positions become something the viewer can report back, a saved project's layout section
+is where they'd be added, without breaking older saved files.
+
 ## Reading graphs from other sources
 
 ```python
@@ -604,6 +638,20 @@ write_gexf(g, "out.gexf")                # via networkx
 
 None of these plain-edge formats can represent a hyperedge (more than two endpoints) — networkx has the same
 limitation — so hyperedges are skipped with a `UserWarning` rather than silently dropped or raising.
+
+For a **lossless** round trip instead — every IR field, including hyperedges, roles, multiplex layers and
+temporal bounds — use `write_json`/`read_json`, plexgraph's own native JSON format (no dependency, including no
+networkx):
+
+```python
+from plexgraph_core import write_json, read_json
+
+write_json(g, "out.json")
+g2 = read_json("out.json")   # identical to g in every IR field
+```
+
+This is also what `save_project()`/`open_project()` use under the hood for a saved project's graph component —
+see "Saving and reopening a project" above.
 
 ## Community detection
 

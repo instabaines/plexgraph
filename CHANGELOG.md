@@ -124,6 +124,22 @@ and versions follow [Semantic Versioning](https://semver.org/). Until 1.0 the AP
   Pajek has no native temporal concept; there's no `weight_key`, since an edge/arc line's weight is a
   fixed position, not a named attribute, and is always read directly. Cross-validated against a real
   `.net` file written by networkx. See "Reading Pajek files" in the user guide.
+- **`write_json()`/`read_json()`**: a native, lossless JSON serialization of plexgraph's own Graph IR --
+  every field round-trips exactly, including hyperedges, roles, multiplex layers, temporal bounds and
+  `time_unit`, unlike the plain-edge formats (`write_edgelist`/`write_graphml`/`write_gexf`), which can't
+  represent a hyperedge at all. `-inf`/`+inf` ("always present") encode as `null`, the same convention the
+  wire protocol already uses. `graph_to_dict()`/`graph_from_dict()` do the same without touching a file,
+  for embedding a graph inside something else -- which is exactly what a saved project does next.
+- **`handle.save_project()` / `pg.open_project()`**: save a session's graph, style and layout parameters
+  (`seed`, `layer_gravity`, `hub_inertia`, `layout_iterations`) to one JSON file, and reopen it later with
+  `open_project(path)`. This is a *reproducible* snapshot, not a pixel-exact one: the viewer has no
+  drag-to-reposition feature yet and never reports node positions back to Python (the server-side
+  `force_directed_layout()` streams them one-way, fresh, on every connection), so there is no literal
+  position to save -- reopening re-runs that same deterministic layout with its original seed and lands
+  back on the same positions as a result of recomputing them. `StyleController.load_spec()` is new
+  alongside this, for restoring an already-built style spec wholesale (as `spec()` returns one) without
+  re-deriving it through `build_style()`'s networkx-option vocabulary. See "Saving and reopening a
+  project" in the user guide.
 - `handle.export()`/`.save()` could time out against the notebook widget even though the viewer answered
   correctly. They block the calling thread until the reply arrives, which is always safe for a browser tab (its
   own, unrelated thread), but not for the notebook widget: the reply can only be delivered by the Jupyter kernel's

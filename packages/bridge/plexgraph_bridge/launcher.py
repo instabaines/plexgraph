@@ -157,7 +157,10 @@ def _show_widget(graph: Graph, controller: StyleController, viewer_style: dict[s
                        viewer_style=viewer_style)
     display(view)
     handle = ShowHandle(ws_port=None, http_port=None, thread=None, _stop=view.close, widget=view, _style=controller,
-                        _hub=view._plexgraph)
+                        _hub=view._plexgraph,
+                        _layout_params={"seed": seed, "layer_gravity": layer_gravity, "hub_inertia": hub_inertia,
+                                        "layout_iterations": layout_iterations},
+                        _initial_style=dict(viewer_style))
     return handle if return_handle else None
 
 
@@ -291,6 +294,8 @@ class ShowHandle:
     url: str | None = None  # where the viewer is; None when there is no address to give (no viewer served, or Colab)
     _style: StyleController | None = field(default=None, repr=False)
     _hub: Any = field(default=None, repr=False)  # the ClientHub (BridgeServer or the widget's), for export/save
+    _layout_params: dict[str, Any] = field(default_factory=dict, repr=False)  # seed/layer_gravity/hub_inertia/iters
+    _initial_style: dict[str, Any] = field(default_factory=dict, repr=False)  # the legacy simple style dict, as-sent
 
     def diagnostics(self) -> dict[str, Any]:
         """What the notebook viewer reports about itself (canvas size, WebGL, level of detail, errors); see
@@ -406,6 +411,16 @@ class ShowHandle:
         """The style changes currently applied, as plain data."""
         return self._controller().spec()
 
+    def save_project(self, path: str | os.PathLike[str]) -> None:
+        """Save this session's graph, style and layout parameters (seed, layer_gravity, hub_inertia)
+        to `path` as one JSON file -- reopen it with `plexgraph.open_project(path)`. See
+        `plexgraph_bridge.project` for exactly what this does and does not capture (it reproduces the
+        layout deterministically; it does not capture manually-dragged node positions, since the
+        viewer does not currently report them back to Python)."""
+        from plexgraph_bridge.project import save_project as _save_project
+
+        _save_project(self, path)
+
     def _controller(self) -> StyleController:
         if self._style is None:
             raise RuntimeError("this session has no style controller")
@@ -447,6 +462,7 @@ def show(
     hull_padding: float | None = None,
     return_handle: bool = False,
     widget: bool | None = None,
+    _initial_style_override: dict[str, Any] | None = None,
     **style_options: Any,
 ) -> ShowHandle | None:
     """Render `graph` interactively.
@@ -550,7 +566,9 @@ def show(
         options["edge_color"] = edge_color
     controller.update(**options)
 
-    style = _build_style_dict(
+    # _initial_style_override lets open_project() restore this exact dict (as a prior session's
+    # save_project() captured it) instead of re-deriving it from this call's own keyword arguments.
+    style = _initial_style_override if _initial_style_override is not None else _build_style_dict(
         {
             "node_color_by": node_color_by,
             "node_radius_px": node_radius_px,
@@ -726,7 +744,11 @@ def show(
         if threading.current_thread() is not bridge_thread:
             bridge_thread.join(timeout=10)
 
-    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop, token=token, url=url, _style=controller, _hub=hub_ref[0] if hub_ref else None)
+    handle = ShowHandle(ws_port=actual_ws_port, http_port=actual_http_port, thread=bridge_thread, _stop=stop,
+                        token=token, url=url, _style=controller, _hub=hub_ref[0] if hub_ref else None,
+                        _layout_params={"seed": seed, "layer_gravity": layer_gravity, "hub_inertia": hub_inertia,
+                                        "layout_iterations": layout_iterations},
+                        _initial_style=dict(style))
 
     if block:
         try:

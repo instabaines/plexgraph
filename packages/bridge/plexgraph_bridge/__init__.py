@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Any
 
 from plexgraph_bridge.launcher import show
+from plexgraph_bridge.project import open_project
 from plexgraph_bridge.style import (
     COLORMAPS,
     PALETTES,
@@ -36,6 +37,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "show",
+    "open_project",
     "BridgeServer",
     "RESET",
     "COLORMAPS",

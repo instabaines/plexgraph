@@ -10,6 +10,7 @@ from plexgraph_core.io.edgelist import (
 from plexgraph_core.io.gexf import read_gexf
 from plexgraph_core.io.gml import read_gml
 from plexgraph_core.io.graphml import read_graphml
+from plexgraph_core.io.json_io import graph_from_dict, graph_to_dict, read_json, write_json
 from plexgraph_core.io.networkx_io import from_gexf, from_graphml, from_networkx, to_networkx, write_gexf, write_graphml
 from plexgraph_core.io.pajek import read_pajek
 from plexgraph_core.io.temporal import from_pandas_temporal_edgelist, from_temporal_edgelist, read_temporal_edgelist
@@ -36,4 +37,8 @@ __all__ = [
     "read_graphml",
     "read_dot",
     "read_pajek",
+    "graph_to_dict",
+    "graph_from_dict",
+    "write_json",
+    "read_json",
 ]
