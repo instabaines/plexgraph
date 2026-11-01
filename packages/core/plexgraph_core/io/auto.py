@@ -5,11 +5,12 @@ no other context about its format).
 There is no content-sniffing fallback: an unrecognised extension raises rather than guessing, since
 a wrong guess silently misreading a file is worse than a clear error naming the unsupported
 extension. A caller that knows more about a file than its extension conveys (a non-default
-delimiter, a header row, a custom layer/time key) should call that reader directly instead of going
-through this dispatcher.
+delimiter, no header row, a custom column order, a layer/time key) should call that reader
+directly instead of going through this dispatcher.
 """
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 from plexgraph_core.io.dot import read_dot
@@ -36,6 +37,13 @@ _READERS = {
     ".json": read_json,
     ".txt": read_edgelist,
     ".edgelist": read_edgelist,
+    # Real RFC-4180 parsing (via read_edgelist's csv-module path), not str.split(). header=True and
+    # columns=(0, 1) (read_edgelist's own default) match the overwhelmingly common shape of a
+    # hand-authored or pandas-exported edge-list CSV: a header row, source in the first column,
+    # target in the second. A file with a different column order/weight column/no header needs
+    # `read_edgelist(path, delimiter=",", ...)` called directly with the right kwargs.
+    ".csv": partial(read_edgelist, delimiter=",", header=True),
+    ".tsv": partial(read_edgelist, delimiter="\t", header=True),
 }
 
 
@@ -44,7 +52,9 @@ def read_graph(path: str | Path) -> Graph:
 
     `.json` is read as a plexgraph graph/project file (`read_json`). `.txt`/`.edgelist` are read as
     a plain whitespace-delimited edgelist with every other `read_edgelist` option left at its
-    default. Raises `UnknownGraphFormatError` for any other extension."""
+    default. `.csv`/`.tsv` are read as a comma-/tab-delimited edgelist with a header row and
+    source/target in the first two columns (`read_edgelist(path, delimiter=..., header=True)`).
+    Raises `UnknownGraphFormatError` for any other extension."""
     suffix = Path(path).suffix.lower()
     reader = _READERS.get(suffix)
     if reader is None:

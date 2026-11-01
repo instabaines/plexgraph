@@ -48,6 +48,20 @@ def test_reads_plain_edgelist_by_txt_extension(tmp_path):
     assert g.num_nodes == 3 and g.num_edges == 2
 
 
+def test_reads_csv_with_a_header_row_by_extension(tmp_path):
+    path = tmp_path / "g.csv"
+    path.write_text("source,target\na,b\nb,c\n")
+    g = read_graph(path)
+    assert g.num_nodes == 3 and g.num_edges == 2
+
+
+def test_reads_tsv_with_a_header_row_by_extension(tmp_path):
+    path = tmp_path / "g.tsv"
+    path.write_text("source\ttarget\na\tb\nb\tc\n")
+    g = read_graph(path)
+    assert g.num_nodes == 3 and g.num_edges == 2
+
+
 def test_unknown_extension_raises_rather_than_guessing(tmp_path):
     path = tmp_path / "g.weird"
     path.write_text("whatever")

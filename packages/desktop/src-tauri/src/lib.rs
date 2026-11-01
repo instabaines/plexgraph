@@ -22,7 +22,7 @@ use tauri_plugin_dialog::DialogExt;
 /// Extensions `read_graph` (plexgraph_core/io/auto.py) knows how to load -- kept in sync with that
 /// dispatcher's `_READERS` table so the native Open-File dialog never offers a file it can't read.
 const GRAPH_FILE_EXTENSIONS: &[&str] = &[
-    "gml", "gexf", "graphml", "dot", "gv", "net", "json", "txt", "edgelist",
+    "gml", "gexf", "graphml", "dot", "gv", "net", "json", "txt", "edgelist", "csv", "tsv",
 ];
 
 /// The sidecar's fixed, pre-agreed port -- reasonable for a single-user local desktop app (see
