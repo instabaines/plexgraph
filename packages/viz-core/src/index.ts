@@ -105,6 +105,12 @@ export interface ViewerHandle {
    * style (getStyle()) to `path` as a project file (the native Save-Project dialog) -- not
    * supported over the notebook transport. See MountViewerOptions.onFileAck for the result. */
   saveProject(path: string): void;
+  /** Ask the sidecar to run one of its known analysis algorithms ("community",
+   * "eigenvector_centrality", "pagerank_centrality") on the live graph and recolor/resize it by the
+   * result -- not supported over the notebook transport. The ack (see MountViewerOptions.onFileAck,
+   * `of: "run_measure"`) just confirms the run; the recoloring itself arrives as an ordinary style
+   * message, through the same path a notebook-driven style push already uses. */
+  runMeasure(measure: string, params?: Record<string, unknown>): void;
 }
 
 export interface MountViewerOptions extends RendererOptions {
@@ -113,7 +119,8 @@ export interface MountViewerOptions extends RendererOptions {
   onError?: (err: unknown) => void;
   /** Called when a style pushed from Python is invalid; the previous style stays in place. */
   onStyleError?: (err: unknown) => void;
-  /** The sidecar's reply to loadFile()/saveProject(); see AckMessage. */
+  /** The sidecar's reply to a one-off command the frontend sent: loadFile()/saveProject()/
+   * runMeasure(). Every ack carries `of`, naming which command it answers. */
   onFileAck?: (ack: AckMessage) => void;
 }
 
@@ -234,6 +241,12 @@ export function mountViewer(
         throw new Error("saveProject is only available over a WebSocket connection, not in a notebook widget");
       }
       transport.sendSaveProject(path, renderer.getStyle());
+    },
+    runMeasure(measure: string, params?: Record<string, unknown>): void {
+      if (!(transport instanceof WebSocketTransport)) {
+        throw new Error("runMeasure is only available over a WebSocket connection, not in a notebook widget");
+      }
+      transport.sendRunMeasure(measure, params ?? {});
     },
   };
 }

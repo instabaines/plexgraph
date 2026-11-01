@@ -2,6 +2,7 @@ import { formatTime, mountViewer, PARENT_TRANSPORT, RendererOptions, rgbaToCss, 
 import { exportView, type ExportFormat } from "./export";
 import { mountAppearance } from "./appearance";
 import { mountTools } from "./tools";
+import { mountMeasures } from "./measures";
 import { mountDesktopIntegration } from "./desktop";
 
 function parseStyleParam(raw: string | null): RendererOptions {
@@ -86,6 +87,7 @@ const exportToggle = document.getElementById("export-toggle") as HTMLButtonEleme
 const exportMenu = document.getElementById("export-menu")!;
 const toolsEl = document.getElementById("tools")!;
 const appearanceEl = document.getElementById("appearance")!;
+const measuresEl = document.getElementById("measures")!;
 
 function resizeCanvas(): void {
   const dpr = window.devicePixelRatio || 1;
@@ -263,7 +265,10 @@ if (!wsPort) {
       }
     },
     onColorLegend: (target, legend) => renderLegend(target === "node" ? nodeColorLegendEl : edgeColorLegendEl, target === "node" ? "Node color" : "Edge color", legend, timeUnit),
-    onFileAck: (ack) => desktop.handleAck(ack),
+    onFileAck: (ack) => {
+      desktop.handleAck(ack);
+      measures.handleAck(ack);
+    },
   });
   const desktop = mountDesktopIntegration(handle, (text) => {
     connectionStatus = text;
@@ -271,6 +276,7 @@ if (!wsPort) {
   });
   tools = mountTools(toolsEl, handle, (id) => handle.getNodeKey(id) ?? String(id));
   appearance = mountAppearance(appearanceEl, handle, () => tools?.getSelection() ?? []);
+  const measures = mountMeasures(measuresEl, handle);
   const search = document.getElementById("node-search") as HTMLInputElement;
   const results = document.getElementById("search-results")!;
   const inspector = document.getElementById("node-inspector")!;

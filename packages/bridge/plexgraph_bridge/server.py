@@ -7,8 +7,12 @@ and -- for the desktop app's native Open-File/Save-Project dialogs -- `"load_fil
 each acknowledged with an `encode_ack` reply on the same connection. `"load_file"` swaps `self.graph`
 in place and does no hot-swap-mid-stream of its own: the desktop frontend reacts to a successful ack
 by closing and reopening its WebSocket, which lands in `_handle_connection` again and streams the
-new graph through the ordinary fresh-Session path below. Hover/selection events flowing frontend ->
-Python (docs/architecture/plan.md section 3) are not implemented yet.
+new graph through the ordinary fresh-Session path below. There is also `"run_measure"` (the viewer's
+"Measures" panel): runs one of `_MEASURES` on the live graph and recolors/resizes it by the result,
+pushed as a `style` message with the computed values embedded directly (not as a node attribute --
+an already-connected tab has no other way to learn about one added after it connected). Hover/
+selection events flowing frontend -> Python (docs/architecture/plan.md section 3) are not
+implemented yet.
 
 Python can change the viewer's style while it is open (`push_style`): the change goes to every connected tab, and a
 tab that connects later is brought up to date right after it receives the graph.
@@ -23,23 +27,57 @@ import mimetypes
 import secrets
 import urllib.parse
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import websockets
 from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.datastructures import Headers
 from websockets.http11 import Request, Response
 
+from plexgraph_bridge.color import parse_color
 from plexgraph_bridge.hub import ClientHub, Send
 from plexgraph_bridge.project import build_project_dict
+from plexgraph_bridge.style import build_style, by_values
+from plexgraph_core.algorithms.centrality import CentralityResult, eigenvector_centrality, pagerank_centrality
+from plexgraph_core.algorithms.community import CommunityResult, detect_communities
 from plexgraph_core.io.auto import read_graph
 from plexgraph_core.model.ir import Graph
-from plexgraph_core.wire.protocol import decode, encode_ack
+from plexgraph_core.wire.protocol import decode, encode_ack, encode_style
 
 if TYPE_CHECKING:
     from plexgraph_bridge.style import StyleController
 
 logger = logging.getLogger("plexgraph_bridge.server")
+
+_MEASURES = {
+    "community": detect_communities,
+    "eigenvector_centrality": eigenvector_centrality,
+    "pagerank_centrality": pagerank_centrality,
+}
+# matplotlib's tab10, as hex: community ids cycle through these rather than through a continuous
+# colormap, since a colormap would make adjacent ids look related when they aren't.
+_CATEGORY_PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                      "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+
+
+def _measure_style_options(result: "CommunityResult | CentralityResult", n: int) -> dict[str, Any]:
+    """Build the `build_style()`/`StyleController.update()` kwargs for a measure's result, as raw
+    per-node arrays embedded directly in the style message (see the module docstring on why: an
+    already-connected tab has no other way to learn about a node attribute added after it connected)."""
+    if isinstance(result, CommunityResult):
+        flat = np.zeros(n * 4, dtype=np.float32)
+        for node_id, community in result.node_communities().items():
+            flat[node_id * 4:node_id * 4 + 4] = parse_color(_CATEGORY_PALETTE[community % len(_CATEGORY_PALETTE)])
+        return {"node_color": {"kind": "colors", "colors": flat}}
+    arr = np.full(n, np.nan)
+    for node_id, value in result.node_centrality().items():
+        arr[node_id] = value
+    finite = arr[np.isfinite(arr)]
+    sizes = np.full(n, 12.0)
+    if finite.size and finite.max() > finite.min():
+        sizes = 4.0 + (np.nan_to_num(arr, nan=finite.min()) - finite.min()) / (finite.max() - finite.min()) * 20.0
+    return {"node_color": by_values(arr), "node_size": {"kind": "pixels", "values": sizes}}
 
 
 # Some systems map these to the wrong type (Windows reads them from the registry), and a browser refuses a script
@@ -93,6 +131,9 @@ class BridgeServer(ClientHub):
         self.host = host
         self.port = port
         self._server: Server | None = None
+        # Only used by _run_measure's no-StyleController push path (the bare desktop sidecar); a
+        # tab's hub-driven style version has its own counter inside StyleController when one exists.
+        self._measure_push_version = 0
 
     async def _handle_connection(self, websocket: ServerConnection) -> None:
         # One lock for every write to this connection: the graph/layout stream and style pushes
@@ -127,6 +168,8 @@ class BridgeServer(ClientHub):
             await self._load_file(payload["path"], respond)
         elif msg_type == "save_project" and isinstance(payload.get("path"), str):
             await self._save_project(payload["path"], payload.get("style"), respond)
+        elif msg_type == "run_measure" and isinstance(payload.get("measure"), str):
+            await self._run_measure(payload["measure"], payload.get("params") or {}, respond)
 
     async def _load_file(self, path: str, respond: Send) -> None:
         """Read `path` with the format its extension names and make it the live graph -- the desktop app's
@@ -160,6 +203,34 @@ class BridgeServer(ClientHub):
             await respond(encode_ack("save_project", False, str(exc)))
             return
         await respond(encode_ack("save_project", True))
+
+    async def _run_measure(self, measure: str, params: object, respond: Send) -> None:
+        """Run one of the known analysis algorithms on the live graph and recolor/resize it by the
+        result -- the viewer's "Measures" panel. Replies with an ack naming the command
+        (`"run_measure"`), then, on success, a separate `style` message carrying the recoloring."""
+        algo = _MEASURES.get(measure)
+        if algo is None:
+            await respond(encode_ack("run_measure", False,
+                f"unknown measure {measure!r}; known: {', '.join(sorted(_MEASURES))}"))
+            return
+        if not isinstance(params, dict):
+            await respond(encode_ack("run_measure", False, "params must be an object"))
+            return
+        try:
+            result = algo(self.graph, **params)
+            options = _measure_style_options(result, self.graph.num_nodes)
+        except Exception as exc:
+            logger.warning("run_measure failed for %r", measure, exc_info=True)
+            await respond(encode_ack("run_measure", False, str(exc)))
+            return
+        if self.style is not None:
+            self.style.update(**options)
+        else:
+            spec_update = build_style(self.graph, **options)
+            if spec_update:
+                self._measure_push_version += 1
+                self.push_style(self._measure_push_version, [encode_style("set", spec=spec_update)])
+        await respond(encode_ack("run_measure", True))
 
     async def start(self) -> int:
         """Start listening and return the bound port."""

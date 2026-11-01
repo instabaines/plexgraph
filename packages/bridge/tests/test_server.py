@@ -326,3 +326,140 @@ async def test_save_project_to_an_unwritable_path_acks_an_error():
     finally:
         server.close()
         await server.wait_closed()
+
+
+async def _next_style(ws) -> dict:
+    """Read messages until a style message arrives -- it races the layout stream already in progress."""
+    while True:
+        message = msgpack.unpackb(await ws.recv(), raw=False)
+        if message["type"] == "style":
+            return message
+
+
+def _hub_and_spoke_graph() -> Graph:
+    """Two triangle-ish communities bridged by one edge, with an asymmetric hub inside one of them
+    -- gives detect_communities() more than one group, and pagerank/eigenvector a non-uniform result,
+    so a test can tell "something got computed" apart from "the uniform/fallback case happened to
+    look right"."""
+    g = Graph()
+    for k in "abcdef":
+        g.add_node(k)
+    for u, v in [("a", "b"), ("a", "c"), ("a", "d"), ("a", "e"), ("b", "c"), ("d", "e"), ("e", "f")]:
+        g.add_edge(u, v)
+    return g
+
+
+@pytest.mark.asyncio
+async def test_run_measure_community_recolors_with_distinct_categorical_colors():
+    server = BridgeServer(_hub_and_spoke_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()  # the starting graph
+            await ws.send(msgpack.packb({"type": "run_measure", "measure": "community", "params": {}}, use_bin_type=True))
+            ack = await _next_ack(ws, "run_measure")
+            assert ack == {"type": "ack", "of": "run_measure", "ok": True, "error": None}
+            style = await _next_style(ws)
+            assert style["op"] == "set"
+            color = style["spec"]["node"]["color"]
+            assert color["kind"] == "colors"
+            # colors travels as a raw $dtype/$data-wrapped array (see _wire_arrays): 4 float32
+            # components (rgba) per of the graph's 6 nodes.
+            assert color["colors"]["$dtype"] == "f32"
+            assert len(color["colors"]["$data"]) == 6 * 4 * 4
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_run_measure_pagerank_recolors_and_resizes_continuously():
+    server = BridgeServer(_hub_and_spoke_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()
+            await ws.send(msgpack.packb({"type": "run_measure", "measure": "pagerank_centrality", "params": {}}, use_bin_type=True))
+            ack = await _next_ack(ws, "run_measure")
+            assert ack == {"type": "ack", "of": "run_measure", "ok": True, "error": None}
+            style = await _next_style(ws)
+            assert style["op"] == "set"
+            node = style["spec"]["node"]
+            assert node["color"]["kind"] == "values"
+            assert node["size"]["kind"] == "pixels"
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_run_measure_eigenvector_centrality_recolors_and_resizes_continuously():
+    # eigenvector_centrality's power iteration needs a non-bipartite graph to converge reliably (a
+    # plain path or cycle can oscillate between two eigenvectors of opposite sign); the hub-and-spoke
+    # fixture has triangles (odd cycles), so it converges.
+    server = BridgeServer(_hub_and_spoke_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()
+            await ws.send(msgpack.packb({"type": "run_measure", "measure": "eigenvector_centrality", "params": {}}, use_bin_type=True))
+            ack = await _next_ack(ws, "run_measure")
+            assert ack == {"type": "ack", "of": "run_measure", "ok": True, "error": None}
+            style = await _next_style(ws)
+            assert style["op"] == "set"
+            node = style["spec"]["node"]
+            assert node["color"]["kind"] == "values"
+            assert node["size"]["kind"] == "pixels"
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_run_measure_unknown_name_acks_an_error():
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()
+            await ws.send(msgpack.packb({"type": "run_measure", "measure": "betweenness", "params": {}}, use_bin_type=True))
+            ack = await _next_ack(ws, "run_measure")
+            assert ack["ok"] is False and "betweenness" in ack["error"]
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_run_measure_with_a_bad_param_acks_an_error():
+    server = BridgeServer(_small_graph(), host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()
+            await ws.send(msgpack.packb(
+                {"type": "run_measure", "measure": "community", "params": {"resolution": -1}}, use_bin_type=True))
+            ack = await _next_ack(ws, "run_measure")
+            assert ack["ok"] is False and ack["error"]
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_run_measure_on_a_hyperedge_graph_acks_an_error():
+    g = Graph()
+    for k in "abc":
+        g.add_node(k)
+    g.add_hyperedge(["a", "b", "c"])
+    server = BridgeServer(g, host="localhost", port=0, layout_iterations=2, seed=1)
+    port = await server.start()
+    try:
+        async with ws_connect(f"ws://localhost:{port}") as ws:
+            await ws.recv()
+            await ws.send(msgpack.packb({"type": "run_measure", "measure": "community", "params": {}}, use_bin_type=True))
+            ack = await _next_ack(ws, "run_measure")
+            assert ack["ok"] is False and ack["error"]
+    finally:
+        server.close()
+        await server.wait_closed()

@@ -50,6 +50,12 @@ export class WebSocketTransport {
     this.socket.send(encode({ type: "save_project", path, style: styleSpec }));
   }
 
+  /** Ask the sidecar to run an analysis algorithm and recolor/resize the live graph by its result --
+   * the "Measures" panel. The reply is an AckMessage with `of: "run_measure"`. */
+  sendRunMeasure(measure: string, params: Record<string, unknown>): void {
+    this.socket.send(encode({ type: "run_measure", measure, params }));
+  }
+
   close(): void {
     this.socket.close();
   }
